@@ -149,6 +149,90 @@ proof-of-bug transcript is at
 
 ---
 
+## Review 3: H3 e2e (post-v0.2 pre-release validation)
+
+**Date:** 2026-10-18
+**Commit reviewed:** `94f4331` (v0.2 HEAD before this round)
+**Verdict:** **CRITICAL FINDING** — v0.2 ships with a known
+limitation not caught by either Qwen or Mavis review.
+
+### What we ran
+
+```
+# Run 1: baseline (--use-ck-attention)
+H3 video, 8 steps turbo, 1.625s output
+Result: 116.0 s, 538 KB mp4, 2.6 Mbps bitrate
+Visual: correct (cinematic Batman chase scene on a rooftop)
+
+# Run 2: flash (--use-flash-attention, this work)
+H3 video, 8 steps turbo, 1.625s output
+Result: 111.0 s, 3.8 MB mp4, 18.7 Mbps bitrate
+Visual: CHECKERBOARD GARBAGE — kernel-level corruption
+```
+
+### Why this matters
+
+Qwen review verified the patch against:
+- The patch applying cleanly to upstream `965c921` ✅
+- 5 (now 6) unit tests against SDPA reference ✅
+- E2E Qwen-Image 2.1 (bf16/fp16 weights) ✅
+
+Mavis review verified:
+- The install script is correct ✅
+- The 6 unit tests pass with T6 stress (L=4096, scale=1.0) ✅
+- The documentation is honest ✅
+
+**Neither reviewer tested int8 convrot** because the unit test
+uses fp16-input SDPA reference, and the e2e test was Qwen-only.
+The H3 e2e test was deferred to TODO-4 and never run before
+v0.2 was tagged.
+
+### Root cause
+
+H3 uses **int8 convrot weights** (rotated + per-channel INT8
+quantization) for both UNET and CLIP. The CUTLASS kernel
+`SM75_16x8x8_F32F16F16F32_TN` is fp16-input only (the `F16`
+in the name). When int8 convrot-rotated values are cast to
+fp16 (in the linear projection before attention), the rounding
+loses precision and the CUTLASS mma produces garbage.
+
+The community forks (`ssiu`, `KLM`) have the same issue. The
+upstream CUTLASS has no sm_75 int8-input specialization.
+Adding one would require non-trivial engineering (sm_75 has no
+dedicated INT8 tensor cores, so it would be very slow even if
+it worked).
+
+### Action taken
+
+1. **Reverted `COMFYUI_ARGS` in `compose.yaml`** to
+   `--use-ck-attention` (the safe default for both Qwen and H3).
+2. **Documented the limitation** in README.md "Limitations"
+   section.
+3. **Marked M4 (H3) as "done with caveat"** in the README
+   validation table.
+4. **Added TODO-9** to investigate H3-specific work
+   (deferred indefinitely; ck-attention is the chosen path).
+5. **H3 e2e results saved** to `tests/H3_RESULTS.md` with
+   frame samples at `tests/results/frames/`.
+
+### Implication for v0.2
+
+v0.2 is correct **as far as it goes**:
+- Install script works on a fresh host
+- 6/6 unit tests pass (T1-T5 fp16 easy mode, T6 fp16 stress)
+- Qwen-Image 2.1 e2e is correct and 9.5% faster per step
+- All Mavis review action items addressed
+
+v0.2 is **not** correct for H3 or any int8 convrot model. The
+README explicitly says so. ck-attention is the default, so
+fresh users get correct H3 output by default.
+
+**The kernel work is sound. The scope is narrower than the
+README implied before H3 was tested.** v0.2.1 will be tagged
+once the README wording is reviewed and approved.
+
+---
+
 ## Final state
 
 After both reviews are in:

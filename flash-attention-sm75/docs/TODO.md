@@ -222,6 +222,46 @@ mirror) for the CUTLASS step.
 5. TODO-7 (sage per-row) is a separate task with its own
    schedule. Defer indefinitely until vaskes says to do it.
 
+### TODO-9: H3 int8 convrot path on sm_75 (NEW 2026-10-18, post-release)
+
+**What:** H3 (Minimax video model) uses int8 convrot weights. The
+sm_75 flash patch we shipped only handles fp16-input attention
+(via `SM75_16x8x8_F32F16F16F32_TN`). When H3 is run with
+`--use-flash-attention`, the output is checkerboard garbage
+(111 s run, 3.8 MB of noise vs 116 s run, 538 KB of correct
+video with ck-attention). Investigation needed.
+
+**Options to consider:**
+
+1. **Add an int8-input CUTLASS kernel for sm_75.** The m16n8k8
+   mma with int8 input would need fp32 accumulator (still
+   sm_75-supported). But sm_75 has no dedicated INT8 tensor
+   cores, so the kernel would be very slow. Probably not worth
+   the engineering cost.
+
+2. **Dequantize convrot to fp16 in a wrapper** before the
+   attention call. Adds compute cost (dequant + extra memory
+   traffic) and breaks the "no host-side dequant" assumption of
+   the convrot path. May or may not be faster than
+   `--use-ck-attention`'s int8 mma.
+
+3. **Per-workflow dispatcher in ComfyUI.** Patch ComfyUI to
+   select attention backend per model. Qwen-Image 2.1 gets
+   flash; H3 gets ck. Requires a ComfyUI code change (not just
+   a flag).
+
+4. **Live with the limitation.** Document that sm_75 flash is
+   bf16/fp16 only. H3 users use ck-attention. This is what v0.2
+   does.
+
+**Status:** option 4 chosen for v0.2. Options 1-3 deferred
+indefinitely; can be picked up if a strong use case appears.
+
+**Pass criteria:** pick one of the 4 options and implement it.
+For option 4 (chosen), document the limitation in README
+(✅ done) and pass the H3 e2e test with the chosen backend
+(✅ done with ck-attention, 116 s, 538 KB).
+
 ## When to declare the task fully done
 
 The task is "fully done" when:

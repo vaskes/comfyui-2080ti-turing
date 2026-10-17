@@ -100,9 +100,35 @@ flash-attention-sm75/
 | M2: Kernel correctness | ✅ done (5/5 unit tests, max_diff < 0.0001) |
 | M3: ComfyUI integration | ✅ done (`--use-flash-attention` flag active) |
 | M4: E2E Qwen | ✅ done (141.72 s, recognizable 2.29 MB image) |
-| M4: E2E H3 | ⏳ pending (deferred to TODO-4) |
+| M4: E2E H3 | ⚠️ done with caveat — H3 needs `--use-ck-attention` (see Limitations) |
 | M5: Speed validation | ✅ done (5.07 vs 5.6 s/it = −9.5% per step) |
 | M6: Docs + cleanup | ✅ done (this README, VERSION_PINS, REVIEW_NOTES) |
+
+## Limitations
+
+This work only enables the **bf16/fp16 weight** code path in
+flash-attention. The CUTLASS `SM75_16x8x8_F32F16F16F32_TN`
+m16n8k8 mma with fp32 accumulator is fp16-input only. Models
+that use **int8 convrot weights** (Minimax H3, the qwen3vl_32b
+text encoder for H3, etc.) must use `--use-ck-attention`
+instead — the sm_75 flash path produces checkerboard garbage
+on int8 convrot inputs.
+
+For heterogeneous hosts (where some models are bf16/fp16 and
+others are int8 convrot), use per-workflow dispatch. ComfyUI's
+argparser does not allow setting both `--use-flash-attention`
+and `--use-ck-attention` at the same time, so the dispatcher
+needs to be either (a) per-invocation via the API (set
+`COMFYUI_ARGS` based on the workflow's model list), or (b) a
+patch to ComfyUI to allow per-node attention selection. Both
+are TODO items.
+
+See `tests/H3_RESULTS.md` for the full H3 e2e test report
+(baseline vs flash, frame samples, root cause analysis).
+
+## What was tested
+
+
 ## References
 
 - **Upstream:** [`Dao-AILab/flash-attention`](https://github.com/Dao-AILab/flash-attention) — BSD-3-Clause, © 2023 Tri Dao.
