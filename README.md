@@ -242,6 +242,47 @@ preserved on disk per the "no model file removal" hygiene rule).
 - **`*_turbo_*.safetensors` variants** (turbo distilled Qwen, already on disk).
   These are a different model, not just a quantization — test on its own.
 
+## SageAttention-T4 native sm_75 kernel (validated 2026-10-17)
+
+Tested `THE-ANGEL-AI/SageAttention-SM75-path` — a native sm_75 INT8 QK + FP16 PV
+attention kernel with FP32 accumulation. Built successfully against torch 2.14.1+cu130
+on this image (requires C++20, GCC 13.3, nvidia cu13 wheel for cusparse headers).
+
+**Build notes** (all one-off, not in image):
+- `setup.py` requires `std=c++20` (torch 2.14 errors out with `at::symint::sizes<T>`
+  in `ExpandUtils.h` under C++17, plus `c10::strong_ordering` requires C++20).
+- `include_dirs=[NVIDIA_CU13_INCLUDE]` and `library_dirs=[NVIDIA_CU13_LIB]` must point
+  to `/opt/venv/lib/python3.12/site-packages/nvidia/cu13/{include,lib}` because
+  `libcusparse-dev-13-0` apt package does not exist (only `libcusparse-dev-12-5/12-6`).
+- `pip install --no-build-isolation --no-deps -e .` after every container recreate —
+  `/opt/venv` is inside the image, not a volume, so editable installs are lost on
+  `docker compose down/up`. Use `docker compose restart` to keep them.
+
+**Test results** (Qwen-Image 2.1, 25 steps, seed=65451515):
+
+| Setting | Time | Output | Notes |
+|---|---|---|---|
+| baseline (`--use-ck-attention`, no sage) | 140s | 2.28 MB ✅ | best |
+| SageAttentionT4_Apply, `smooth_k=True` | 165s | 2.77 MB ❌ garbage with dots | 800 OK calls, 0 errors, 32 mask fallbacks |
+| SageAttentionT4_Apply, `smooth_k=False` | 160s | 2.77 MB ❌ garbage | same |
+
+**Verdict: SageAttention-T4 does NOT work for Qwen-Image 2.1.** The native sm_75
+INT8 QK kernel compiles, loads, and runs (0 errors, 800 successful calls), but
+the output is visually garbage. The kernel is ~25s **slower** than baseline
+(160-165s vs 140s) due to fp32→fp16 conversion overhead per call + 32 mask
+fallbacks to pytorch SDPA.
+
+This matches the warning in `Ph0rk0z/SageAttention2` sm_75 fork: *"the CUDA kernel
+can run, but the results are pretty wrong."* INT8 QK quantization loses too much
+precision for Qwen's attention distribution on sm_75.
+
+The kernel **might** work for H3 or other models with different attention
+patterns (no masks, different head_dims). Not tested in this commit.
+
+**Custom node stays in `custom_nodes/SageAttention-T4/`** as a reference build
+for future sm_75 INT8 attention work. Disabled by default — ComfyUI does not
+auto-apply it.
+
 ## Known issues / Gotchas
 
 - **Triton в логе `disabled=True`** — не баг. comfy_kitchen маркирует triton так для
