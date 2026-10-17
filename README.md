@@ -189,6 +189,40 @@ cd /opt/comfyui && docker compose down && docker compose up -d --build
 - `comfyui_bad` / `comfyui_turing` / прочие failure-attempts **не использовать** —
   ставим с нуля каждый раз.
 
-## Лицензия
+## Credits
 
-MIT (или как решит vaskes).
+This work is a collaboration between:
+
+- **Vaskes** — Vibecoder, hardware & infrastructure, project lead, integration QA.
+- **Mavis** — AI implementation agent, powered by **MiniMax M3**.
+
+Full credits (people, organizations, and component attributions) are in
+[`CREDITS.md`](CREDITS.md).
+
+## License & Third-Party Components
+
+**This project is NOT open source.** The Work (Dockerfile, compose.yaml,
+README, the flash_attn shim, and all other files in this repository) is
+**proprietary** and is governed by the [`LICENSE`](LICENSE) file. The
+copyright holder is **Kuduza Ai Lab** (https://kuduza.com).
+
+You may not use, copy, modify, merge, publish, distribute, sublicense, or
+sell the Work without the prior express written permission of Kuduza Ai Lab.
+Where permission is granted, the attribution specified in the LICENSE must
+be preserved in all copies and public references.
+
+The Work uses third-party open-source components (ComfyUI, PyTorch, Triton,
+NVIDIA CUTLASS, etc.). Those components remain governed by their own
+licenses (GPL-3.0, BSD-3-Clause, MIT, Apache-2.0, etc.) as enumerated in
+[`NOTICE.md`](NOTICE.md). Any derivative work distributed in source or
+binary form must comply with those third-party license terms.
+
+| File | Purpose |
+|---|---|
+| [`LICENSE`](LICENSE) | Proprietary license (all rights reserved, no grant) |
+| [`CREDITS.md`](CREDITS.md) | People, roles, and acknowledgments |
+| [`NOTICE.md`](NOTICE.md) | Third-party components and their licenses |
+
+**TL;DR:** Don't redistribute this without talking to Kuduza Ai Lab first.
+The third-party stuff they depend on is still under its original open-source
+license, so derivative works have to honor those too.
