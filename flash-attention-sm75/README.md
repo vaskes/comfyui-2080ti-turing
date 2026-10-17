@@ -71,8 +71,11 @@ flash-attention-sm75/
 ├── scripts/
 │   └── apply-patch-and-install.sh         # convenience installer
 ├── tests/
-│   ├── test_sm75_correctness.py           # unit tests vs SDPA reference
-│   └── test_sm75_e2e.py                   # end-to-end with real workflows
+│   ├── test_sm75_correctness.py           # unit tests vs SDPA reference (5/5 pass, max_diff < 0.0001)
+│   ├── RESULTS.md                         # unit test output
+│   ├── SPEED.md                           # Qwen e2e speed comparison
+│   └── results/
+│       └── qwen_flash_142s.png            # canonical e2e output
 ├── docs/
 │   ├── strategy-decision.md               # why Strategy B over A
 │   ├── upstream-analysis.md               # how the sm_75 support is wired
@@ -93,13 +96,13 @@ flash-attention-sm75/
 | Milestone | Status |
 |---|---|
 | M0: Strategy selection | ✅ done (Strategy B chosen) |
-| M1: Build infra | 🚧 in progress |
-| M2: Kernel correctness | ⏳ pending (will run after M1 build) |
-| M3: ComfyUI integration | ⏳ pending |
-| M4: E2E Qwen + H3 | ⏳ pending |
-| M5: Speed validation | ⏳ pending |
-| M6: Docs + cleanup | ⏳ pending |
-
+| M1: Build infra | ✅ done (5-line patch + CUTLASS vendoring) |
+| M2: Kernel correctness | ✅ done (5/5 unit tests, max_diff < 0.0001) |
+| M3: ComfyUI integration | ✅ done (`--use-flash-attention` flag active) |
+| M4: E2E Qwen | ✅ done (141.72 s, recognizable 2.29 MB image) |
+| M4: E2E H3 | ⏳ pending (deferred to TODO-4) |
+| M5: Speed validation | ✅ done (5.07 vs 5.6 s/it = −9.5% per step) |
+| M6: Docs + cleanup | ✅ done (this README, VERSION_PINS, REVIEW_NOTES) |
 ## References
 
 - **Upstream:** [`Dao-AILab/flash-attention`](https://github.com/Dao-AILab/flash-attention) — BSD-3-Clause, © 2023 Tri Dao.

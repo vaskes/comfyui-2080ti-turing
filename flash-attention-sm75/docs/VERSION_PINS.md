@@ -110,7 +110,37 @@ but the older `libcusparse-dev-12-5`/`12-6` apt packages are
 listed here for diagnostic purposes only — they were checked
 and found to be the wrong major version (we need 13).
 
+## Build environment variables
+
+Set these inside the comfyui container at build time. The install
+script (`scripts/apply-patch-and-install.sh`) sets them automatically.
+
+| Variable | Value | Why |
+|---|---|---|
+| `FLASH_ATTN_CUDA_ARCHS` | `75` (Turing-only) or `75;80;90;100;110;120` (multi-arch) | Selects which sm_X to compile. Upstream default in setup.py is `80;90;100;110;120` (no 75). The install script defaults to `75` because the target audience is Turing-only. For heterogeneous hosts, override before running. |
+| `FLASH_ATTENTION_FORCE_BUILD` | `TRUE` | Skips the wheel-from-pypi fast path. Forces a local build even if a cached wheel exists. Required because we need the sm_75 build, which is not in any published wheel. |
+| `CPATH` | `/opt/venv/lib/python3.12/site-packages/nvidia/cu13/include` | Adds cu13 wheel headers to the include path. Needed because `libcusparse-dev-13-0` does not exist as an apt package on Ubuntu 24.04 (only 12-5/12-6); only the nvidia cu13 wheel has `cusparse.h`. |
+| `LIBRARY_PATH` | `/opt/venv/lib/python3.12/site-packages/nvidia/cu13/lib` | Same, for the linker. |
+
+## Build flags
+
+The pip install invocation used in this work:
+
+```
+/opt/venv/bin/pip install \
+    --no-build-isolation \
+    --no-deps \
+    -e .
+```
+
+| Flag | Reason |
+|---|---|
+| `--no-build-isolation` | Use the in-venv pytorch headers, not a fresh pip-isolated venv. Required because flash-attn's setup.py needs to read torch's `__init__.py` to find the include dir. |
+| `--no-deps` | Don't let pip reinstall torch/triton/etc. Use whatever's already in the venv. This is what pins the build to torch 2.14.1+cu130. Without it, pip would try to upgrade torch and the include paths would be wrong. |
+| `-e` | Editable install. The .so and __init__.py are linked from the clone, not copied. Means rebuilds are fast (just re-run the install script) and the patch can be reapplied without a reinstall. |
+
 ## Reproducibility checklist
+
 
 To rebuild from scratch on a fresh container:
 

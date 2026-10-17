@@ -78,8 +78,11 @@ arch flag is passed to nvcc.
 
 ### Other files
 
-- `csrc/flash_attn/src/philox.cuh` — also has a `#if __CUDA_ARCH__ >= 750`
-  guard, but for unrelated philox state size constants.
+- `csrc/flash_attn/src/philox.cuh` — checked at upstream
+  `965c921`, no sm_75-specific `#if __CUDA_ARCH__ >= 750` guard.
+  The unconditional code is correct on sm_75 because the sm_75
+  mma atom is selected entirely by the kernel_traits.h template
+  specialization; philox is a separate concern.
 - `csrc/flash_attn/src/flash_fwd_kernel.h` and friends — these are
   the actual flash attention forward kernel implementations, which
   use the sm_75 code paths automatically when compiled with
