@@ -94,7 +94,7 @@ flash-attention-sm75/
 |---|---|
 | M0: Strategy selection | ✅ done (Strategy B chosen) |
 | M1: Build infra | 🚧 in progress |
-| M2: Kernel correctness | ⏳ pending |
+| M2: Kernel correctness | ⏳ pending (will run after M1 build) |
 | M3: ComfyUI integration | ⏳ pending |
 | M4: E2E Qwen + H3 | ⏳ pending |
 | M5: Speed validation | ⏳ pending |
