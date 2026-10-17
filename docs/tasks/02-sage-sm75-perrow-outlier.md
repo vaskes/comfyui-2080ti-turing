@@ -17,25 +17,35 @@
 
 ## Abstract
 
-We need to **improve the precision of the existing `SageAttention-T4` kernel
-on RTX 2080 Ti** so it produces **correct output** (not the purple/green
-dot garbage it currently produces for Qwen-Image 2.1), while **retaining
-the speedup it could in principle offer over the 140 s comfy_kitchen
-baseline**.
+We need **`SageAttention` to work on sm_75 (Turing) hardware in current
+ComfyUI**, for **any model**, with correct quality. This is **not** a
+"make Qwen-Image 2.1 garbage-free in 90 s" task — it is an **EOL
+hardware support restoration** task, the same framing as Task 01
+(`docs/tasks/01-flash-sm75-native.md`).
 
-The current state of INT8 attention on sm_75 is:
+The official `thu-ml/SageAttention` repository has **no sm_75 support**
+in any of its current versions (the maintainer excluded sm_75 from the
+build matrix because NVIDIA marked Turing as EOL — same policy
+decision that caused `Dao-AILab/flash-attention` to drop sm_75). The
+sm_75 community has tried three times to keep the path alive, and all
+three attempts produce garbage output for diffusion models:
 
-- `SageAttention-T4` (THE-ANGEL-AI) — 165 s, **garbage** (purple/green dots)
-- `Ph0rk0z/SageAttention2` sm_75 fork — compiles, "results are pretty wrong"
-- The two abandoned `1506086927` forks — also garbage quality
+- `Ph0rk0z/SageAttention2` sm_75 fork — compiles, "the CUDA kernel
+  can run, but the results are pretty wrong"
+- `1506086927/SageAttention2_Optimized_Test` — same pattern
+- `THE-ANGEL-AI/SageAttention-SM75-path` (the one currently shipped
+  in `custom_nodes/SageAttention-T4/` of this repo) — applies the
+  critical `.satfinite` PTX fix, gets the kernel *running*, but still
+  produces purple/green dot garbage for Qwen-Image 2.1 (validated
+  2026-10-17, 165 s for 25 steps, output 2.77 MB but visually wrong)
 
-The reason these all fail on sm_75 is that they use **per-warp INT8
-quantization** — one scale factor per group of 32 threads. This is the
-same precision the sm_80+ versions of SageAttention use, but sm_75 is
-less forgiving: the bf16 storage of Qwen's attention scores has a wider
-dynamic range than the fp16 storage used by sm_80+ models, and per-warp
-quantization cannot capture the outliers that show up row-by-row in
-Qwen's attention.
+The reason all three fail is that they use **per-warp INT8
+quantization** — one scale factor per group of 32 threads. This is
+the same precision the sm_80+ versions of SageAttention use, but
+sm_75 is less forgiving: the bf16 storage of Qwen's attention scores
+has a wider dynamic range than the fp16 storage used by sm_80+
+models, and per-warp quantization cannot capture the outliers that
+show up row-by-row.
 
 The fix is **per-row INT8 quantization** (one scale factor per Q row
 and one per K row, instead of per warp), plus **outlier smoothing**
@@ -43,6 +53,37 @@ and one per K row, instead of per warp), plus **outlier smoothing**
 INT8 range without truncation). This is the algorithm from the
 SageAttention 2 paper (Zhang et al. 2024, arXiv 2411.10958), adapted
 to sm_75's `mma.m8n8k16.satfinite.s32.s8.s8.s32` INT8 path.
+
+The scope of "any model" is intentionally broad. Concretely, the
+kernel must work for (at minimum):
+
+- **Qwen-Image 2.1** (bf16 + INT8-quant text encoders) — the test bench
+  used throughout this repo
+- **Minimax H3** (INT8 convrot) — also a known test bench in this repo
+- Any future model that ComfyUI master ships — the kernel must be
+  general, not Qwen-specific
+
+Reference for "correct" is whatever the current `--use-ck-attention`
+(comfy_kitchen `sol_attn`) produces today for the same model + prompt.
+We are not trying to match some abstract "fp16 reference" — we are
+trying to match the **existing production output** so that switching
+from `--use-ck-attention` to a sage-based backend does not visibly
+change the image.
+
+Speed is a secondary, aspirational concern:
+
+- If the new sage kernel produces correct output and is **the same
+  speed as** the ck-attention baseline (~140 s for Qwen), that is a
+  success. The user can then choose either backend based on other
+  considerations (e.g. memory footprint, future model compatibility).
+- If the new sage kernel is **faster** than ck-attention, that is a
+  bonus — and unlike Task 01, the INT8 path has a realistic
+  *chance* of being faster (per-row INT8 on a tensor-core path uses
+  ~1.6× the throughput of fp16 GEMM, which is exactly the kind of
+  speedup that beats the ck-attention fp16 GEMM baseline).
+- If the new sage kernel is **slower** than ck-attention, it is still
+  a success as long as it is correct, because the goal is EOL support,
+  not a speed record.
 
 The goal of this task is to **build the per-row + outlier version
 inside the existing `custom_nodes/SageAttention-T4/` directory**,
@@ -104,16 +145,51 @@ should make a 4–10× reduction in quantization error on the tails.
 
 ## Problem we solve
 
-**The single concrete problem:** *make the `SageAttention-T4` kernel
-produce correct output for Qwen-Image 2.1 on RTX 2080 Ti.*
+**The single concrete problem:** *make the SageAttention-T4 kernel
+produce correct output for any diffusion model on RTX 2080 Ti (sm_75,
+EOL hardware) in the current ComfyUI.* Speed is secondary; correctness
+is primary. Qwen-Image 2.1 is the **test case**, not the **goal** —
+the same EOL-support framing as Task 01.
 
-Secondary problem: if the per-row + outlier version is also faster than
-the comfy_kitchen baseline (140 s), that's a bonus we should capture.
-The current THE-ANGEL-AI per-warp version is *slower* than baseline
-(165 s vs 140 s) because the per-call fp32→fp16 conversion overhead
-eats the speedup. If per-row is no faster than per-warp on the sm_75
-INT8 path, the task is still a success on the **quality** axis
-(garbage → recognizable), but it will not improve end-to-end speed.
+Today, the SageAttention-T4 INT8 attention backend is **effectively
+broken for any diffusion model on sm_75**: it produces purple/green
+dot garbage (Qwen-Image 2.1, validated 2026-10-17), and H3 has the same
+problem on the sm_75 INT8 path. The three community attempts
+(`Ph0rk0z`, `1506086927`, `THE-ANGEL-AI`) all converge on the same
+failure mode — per-warp INT8 quantization loses too much precision
+for bf16 storage models. This is a **kernel design** problem, not a
+hardware impossibility.
+
+The scope of "any model" is intentionally broad. Concretely, the
+kernel must work for (at minimum):
+
+- **Qwen-Image 2.1** (bf16 + INT8-quant text encoders) — the test
+  bench used throughout this repo
+- **Minimax H3** (INT8 convrot) — also a known test bench in this repo
+- Any future model that ComfyUI master ships — the kernel must be
+  general, not Qwen-specific
+
+Reference for "correct" is whatever the current `--use-ck-attention`
+(comfy_kitchen `sol_attn`) produces today for the same model + prompt.
+We are not trying to match some abstract "fp16 reference" — we are
+trying to match the **existing production output** so that switching
+from `--use-ck-attention` to a sage-based backend does not visibly
+change the image.
+
+Speed is a secondary, aspirational concern:
+
+- If the new sage kernel produces correct output and is **the same
+  speed as** the ck-attention baseline (~140 s for Qwen), that is a
+  success. The user can then choose either backend based on other
+  considerations.
+- If the new sage kernel is **faster** than ck-attention, that is a
+  bonus. Unlike Task 01, the INT8 path has a realistic chance of
+  being faster — per-row INT8 on a tensor-core path uses ~1.6× the
+  throughput of fp16 GEMM, which is exactly the kind of speedup
+  that beats the ck-attention fp16 GEMM baseline.
+- If the new sage kernel is **slower** than ck-attention, it is still
+  a success as long as it is correct, because the goal is EOL support,
+  not a speed record.
 
 What we **do not** try to solve in this task:
 
@@ -124,9 +200,6 @@ What we **do not** try to solve in this task:
   acceleration.
 - bf16 → fp16 model weight conversion. Already proven to break
   Qwen-Image 2.1 in a previous commit on this repo.
-- H3 (Minimax H3) — the kernel may improve H3 as well, but H3 is not
-  the success criterion. H3 is mentioned in test cases T5 only as a
-  regression check.
 
 ---
 
@@ -418,37 +491,56 @@ reference.
 **Pass:** the node UI shows `quant_gran` as a dropdown with
 `"per_row"` (default) and `"per_warp"` (legacy).
 
-### M5 — Qwen-Image 2.1 end-to-end (1 day)
+### M5 — End-to-end correctness on Qwen and H3 (1 day)
 
 - [ ] A workflow `test_wf_qwen_perrow.json` is created, identical
   to `image_qwen_image_2_1_t2i_api_SAGE.json` but with the new
   `quant_gran="per_row"` (default, so could be omitted) in the
   `SageAttentionT4_Apply` node.
-- [ ] Running the workflow with the new node produces a PNG that is
-  **visually correct** — recognizable subject, no purple/green dots,
-  no gray square. Visual inspection by vaskes.
-- [ ] **Qwen code review:** review the workflow, the node parameter
-  change, the test output.
+- [ ] Running the workflow with the new node on **Qwen-Image 2.1**
+  produces a PNG that is **visually correct** — recognizable subject,
+  no purple/green dots, no gray square. Visual inspection by vaskes.
+- [ ] Running the workflow with the new node on **Minimax H3**
+  (`test_wf_h3_perrow.json` is a copy of
+  `video_minimax_h3_t2v_api.json` with the new node added) produces
+  a video that is **visually correct** — H3 INT8 convrot with the
+  per-row kernel must not regress the existing H3 output quality.
+- [ ] **Qwen code review:** review the workflows, the node parameter
+  change, both test outputs.
 
-**Pass:** the workflow output is a recognizable image (target: same
-subject as the 140 s baseline, possibly with minor detail differences
-due to INT8 precision loss, but **clearly** the same scene).
+**Pass:** the workflow output is a recognizable image (Qwen) and a
+recognizable video (H3). The bar is "not garbage"; pixel-level match
+to the ck-attention baseline is not required.
 
 ### M6 — Speed validation (1 day)
 
 - [ ] `bench/bench_perrow_vs_perwarp.py` runs both kernels on the
-  Qwen workflow and reports timing.
-- [ ] Per-row kernel time should be **< per-warp time** (or at most
-  within 5%). Per-row has more memory traffic (the scale tensors)
-  but the same number of mma operations.
-- [ ] If the per-row kernel is **< 140 s**, also runs the
-  end-to-end comparison against the comfy_kitchen baseline. This is
-  the **bonus** scenario.
+  Qwen and H3 workflows and reports timing.
+- [ ] Per-row kernel time on Qwen must be **at most 5% slower** than
+  the ck-attention baseline (140 s × 1.05 = 147 s). This is the
+  *correctness-and-compatibility* bar — the user can choose the new
+  backend as a quality-correct alternative, even at the same speed.
+  Unlike Task 01, the INT8 path has a realistic chance of being
+  faster than fp16 GEMM (per-row INT8 m8n8k16.satfinite has ~1.6×
+  the throughput of m8n8k4 fp16 on sm_75), so the bonus bar is
+  "strictly faster than ck-attention."
+- [ ] If the per-row kernel is **more than 5% slower**, investigate
+  the cause (memory traffic for the scale tensors? dequantization
+  not fused with the mma?) and document in `KNOWN_ISSUES.md`.
+- [ ] Per-row kernel time on H3 must be **at most 5% slower** than
+  the ck-attention baseline (1:45 × 1.05). Same logic.
+- [ ] (Optional, bonus) If per-row is **strictly faster** than
+  ck-attention on both Qwen and H3, document the speedup in the
+  commit message and in the root `README.md`.
 - [ ] **Qwen code review:** review the bench script, confirm
   methodology (warm cache, median of 3).
 
-**Pass:** per-row time ≤ per-warp time × 1.05. Document the speed
-result in the commit message regardless of whether it beats 140 s.
+**Pass:** Qwen per-row time ≤ 147 s, H3 per-row time ≤ 1:45 × 1.05.
+The 140 s ceiling is **not** a pass criterion (it is a stretch goal).
+Per-row being ≤ per-warp × 1.05 is **not** a pass criterion either
+(per-warp is itself broken on Qwen, so per-row could be much faster
+or much slower depending on the bottleneck — both are valid outcomes
+on the correctness axis).
 
 ### M7 — Documentation, README, commit (0.5 day)
 
@@ -569,7 +661,7 @@ Mavis coder updates this section.
 - [ ] M2: Per-row quantization round-trip correctness
 - [ ] M3: Kernel correctness on small inputs
 - [ ] M4: ComfyUI node integration with `quant_gran` parameter
-- [ ] M5: Qwen-Image 2.1 end-to-end
+- [ ] M5: End-to-end correctness on Qwen and H3
 - [ ] M6: Speed validation
 - [ ] M7: Documentation, README, commit
 
@@ -590,7 +682,7 @@ Mavis coder updates this section.
 - [ ] After M2: per-row quantization formula approved
 - [ ] After M3: kernel logic approved
 - [ ] After M4: node parameter plumbing approved
-- [ ] After M5: workflow integration approved
+- [ ] After M5: workflow integration approved (Qwen + H3)
 - [ ] After M6: bench result approved
 
 ### Issues encountered
@@ -609,6 +701,11 @@ A task is **resolved** when:
 4. The commit is pushed and tagged.
 5. The root `README.md` is updated.
 
+The bar for "resolved" is **EOL support restored**, not "fastest
+sage kernel." A working, correct (quality OK) sage kernel for sm_75
+that is the same speed as ck-attention is a successful resolution of
+this task.
+
 If **M5 fails** (the kernel still produces garbage even with per-row
 quantization + outlier smoothing), the most likely causes are:
 
@@ -624,16 +721,24 @@ quantization + outlier smoothing), the most likely causes are:
   Copy the `.satfinite` PTX from `csrc/mma.cuh` in the existing
   per-warp kernel; do not skip this.
 
+Investigate systematically. The per-row quantization round-trip
+unit test (M2) is the first check — if it fails, the kernel cannot
+succeed. The M3 microbench `max_abs_diff` is the second check. M5
+end-to-end is the third. The diagnostic chain is: M2 → M3 → M5.
+
 If **M3 fails** (the microbench shows `max_abs_diff > 0.1`), this is
 the same as M5 failure but at a smaller scale. The diagnostic is the
 same: localize via the test cases.
 
-If **M6 fails** (per-row is *slower* than per-warp), it is still
-worth committing because the quality improvement is the main goal of
-this task. Document the speed result honestly in the commit message
-and in `KNOWN_ISSUES.md`. A future task could investigate why per-row
-adds overhead (likely: extra memory traffic for the scale tensors,
-and the dequantization is not fused with the mma).
+If **M6 fails** (per-row is *more than 5% slower* than the
+ck-attention baseline), it is still worth committing because the
+correctness improvement is the main goal of this task. Document the
+speed result honestly in the commit message and in `KNOWN_ISSUES.md`.
+A future task could investigate why per-row adds overhead (likely:
+extra memory traffic for the scale tensors, and the dequantization
+is not fused with the mma). The repo still gains a working
+EOL-support sage kernel, and future work can target speed
+separately.
 
 ---
 
