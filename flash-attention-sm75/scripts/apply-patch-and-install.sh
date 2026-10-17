@@ -51,7 +51,10 @@ echo "  patch applied."
 echo "[3/5] Running pip install inside the comfyui container..."
 docker exec -w "$WORK_DIR" comfyui \
     bash -c "
-        export FLASH_ATTN_CUDA_ARCHS="${FLASH_ATTN_CUDA_ARCHS:-75}"  # default: sm_75 only (Turing-only hosts). For heterogeneous GPUs, set to e.g. "75;80;90" (will take ~90 min to build)
+        # default: sm_75 only (Turing-only hosts). For heterogeneous GPUs,
+# set FLASH_ATTN_CUDA_ARCHS="75;80;90" before running this script
+# (heterogeneous build takes ~90 min; sm_75-only build takes ~8 min)
+        export FLASH_ATTN_CUDA_ARCHS="${FLASH_ATTN_CUDA_ARCHS:-75}"
         export FLASH_ATTENTION_FORCE_BUILD=TRUE
         export CPATH='$NVIDIA_CU13_INCLUDE'
         export LIBRARY_PATH='$NVIDIA_CU13_LIB'
