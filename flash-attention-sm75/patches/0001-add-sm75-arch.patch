@@ -1,0 +1,14 @@
+--- a/setup.py
++++ b/setup.py
+@@ -113,6 +113,11 @@ def add_cuda_gencodes(cc_flag, archs, bare_metal_version):
+     supported_archs = []
+ 
++    # sm_75 (Turing) - EOL hardware, but kernel code in csrc/flash_attn/src/
++    # already supports it via CUTLASS SM75_16x8x8_F32F16F16F32_TN (m16n8k8 fp16->fp32)
++    if 75 in archs:
++        cc_flag += [-gencode, arch=compute_75,code=sm_75]
++        supported_archs.append(75)
++
+     # Always-regular 80
+     if 80 in archs:
+         cc_flag += [-gencode, arch=compute_80,code=sm_80]
