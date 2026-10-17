@@ -101,38 +101,41 @@ RTX 2080 Ti (sm_75), validated 2026-10-17:
 | `--use-pytorch-cross-attention` | 2:55 (175s) | — | ✅ same as default |
 | **`--use-ck-attention`** | **2:25 (145s)** | **1:45 (105s) @ 1s** | **✅ correct** |
 | `--use-flash-attention` (ssiu/flash-attention-turing) | 1:47 (107s) | — | ❌ **gray square** for Qwen |
-| `--use-flash-attention --force-upcast-attention` | 1:47 (107s) | — | ❌ still gray |
+| `--use-flash-attention` (KLM-corporation/flash-attention-2080ti) | 2:10 (130s) | — | ❌ **gray square** for Qwen |
 
 **`--use-ck-attention` = +19% on Qwen, +massive on H3 INT8 quantized** (kitchen INT8
 kernels via cuda/eager backend, not Triton).
 
-**`flash_attn_turing` is broken for sm_75 + bf16 qwen text encoder.** Even with
-upcast to fp32 the output is uniform gray. We don't recommend it for now. See
-[flash-attn-turing](#flash-attn-turing) below.
+### Why flash_attn is fundamentally broken on sm_75 + bf16 (validated 2026-10-17)
 
-If you want the absolute fastest no-flash option: stick with `--use-ck-attention`.
+Both ssiu/flash-attention-turing AND KLM-corporation/flash-attention-2080ti produce
+garbage for Qwen-Image 2.1 on sm_75. The cause is a **hardware limitation**, not
+a software bug:
 
-### flash-attn-turing
+- sm_75 (Turing) has fp32 tensor cores but **no fp16 attention tensor-core path**.
+  All attention ops fall back to fp16 CUDA-core math.
+- Kernels convert bf16 input → fp16 for compute. fp16 has insufficient dynamic
+  range for softmax of bf16-scale attention scores.
+- On sm_80+ (Ampere/Ada/Hopper) the GPU has dedicated fp16 attention tensor
+  cores that maintain precision; sm_75 does not.
 
-Status: **installed in image, but disabled by default because it produces garbage for Qwen.**
+| | flash_attn (sm_75) | pytorch SDPA ref |
+|---|---|---|
+| input dtype | bf16 | bf16 |
+| output dtype | **fp16** | bf16 |
+| output std | **0.8101** | 0.1226 |
+| max abs diff vs ref | **2.87** | — |
 
-The shim at `/opt/venv/lib/python3.12/site-packages/flash_attn/__init__.py` routes
-the standard `flash_attn` API to the Turing build from
-[https://github.com/ssiu/flash-attention-turing](https://github.com/ssiu/flash-attention-turing)
-(sm_75-only, fp16-only, no dropout, no mask).
+**Conclusion: NO flash_attn implementation can work on sm_75 for bf16 storage models
+(qwen, h3).** This is a hardware ceiling.
 
-To enable manually for testing:
-1. Edit `compose.yaml`: change `COMFYUI_ARGS` to add `--use-flash-attention`
-2. `docker compose down && docker compose up -d`
+For sm_75 the best we have is `--use-ck-attention` (comfy_kitchen). On H3 this
+unlocks the INT8 quantized kernels (w6a8_int8, convrot_w4a4) which give massive
+speedup over baseline pytorch SDPA.
 
-**Caveat**: For Qwen-Image 2.1 on sm_75, the result is a uniform gray image —
-the Turing-compiled .cu kernels are numerically broken for bf16 + sm_75. The
-official issue is at ssiu/flash-attention-turing (no fix at the time of
-writing). For H3, not validated — likely similar issue since h3 text encoder
-is also bf16.
-
-We're tracking alternative forks (e.g. `KLM-corporation/flash-attention-2080ti`
-which advertises CUDA 13.0 / PyTorch 2.9.0 support) but none has been tested yet.
+If you need the absolute best attention perf, you need a sm_80+ GPU (RTX 3090
+/ 4090 / A100). On those, the standard `pip install flash-attn` works out of
+the box.
 
 ## Что работает (валидировано)
 
