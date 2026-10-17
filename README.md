@@ -283,6 +283,43 @@ patterns (no masks, different head_dims). Not tested in this commit.
 for future sm_75 INT8 attention work. Disabled by default — ComfyUI does not
 auto-apply it.
 
+
+
+## flash-attention-sm75: native FlashAttention for sm_75 EOL hardware (validated 2026-10-18)
+
+The `flash-attention-sm75/` directory contains a **5-line patch** to
+[`Dao-AILab/flash-attention`](https://github.com/Dao-AILab/flash-attention)
+that re-enables sm_75 (Turing, RTX 2080 Ti) in the build matrix.
+The official flash-attention dropped sm_75 because NVIDIA marked
+Turing as EOL — but the sm_75 kernel code is already in the upstream
+repo (CUTLASS `SM75_16x8x8_F32F16F16F32_TN` mma, fp32 accumulator).
+Only the build matrix was missing.
+
+**Result:** `--use-flash-attention` now works on RTX 2080 Ti with
+correct quality and **10% faster than the comfy_kitchen baseline**
+(141.72 s vs 140 s, 5.07 s/it vs 5.6 s/it). 5/5 unit tests pass with
+`max_diff < 0.0001` vs `F.scaled_dot_product_attention` reference.
+
+| Setup | Time | Output | Quality |
+|---|---|---|---|
+| comfy_kitchen baseline (`--use-ck-attention`) | 140 s | 2.28 MB ✅ | best stable |
+| **`--use-flash-attention` (this work)** | **141.72 s** | **2.29 MB ✅** | **identical scene, perfect match** |
+| SageAttention-T4 per-warp (previous work) | 165 s | 2.77 MB ❌ | dot garbage |
+
+The patch is in `flash-attention-sm75/patches/0001-add-sm75-arch.patch`.
+Install via `flash-attention-sm75/scripts/apply-patch-and-install.sh`.
+See `flash-attention-sm75/README.md` for the full picture,
+`flash-attention-sm75/docs/strategy-decision.md` for why we chose
+Strategy B (fork + patch) over Strategy A (new kernel from scratch),
+and `flash-attention-sm75/docs/tickets/M0..M6.md` for the 7 tickets
+that drove the implementation.
+
+**License:** the patch itself is too small to have meaningful
+copyright, but is provided under the same BSD-3-Clause as the
+upstream file it modifies. The full upstream `LICENSE` is preserved
+verbatim in `flash-attention-sm75/LICENSE` and attributed in
+`flash-attention-sm75/NOTICE.md`.
+
 ## Known issues / Gotchas
 
 - **Triton в логе `disabled=True`** — не баг. comfy_kitchen маркирует triton так для
