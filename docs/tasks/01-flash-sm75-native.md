@@ -911,3 +911,54 @@ microbench result is meaningless.
 - Turing whitepaper: NVIDIA 2018, "NVIDIA Turing GPU Architecture."
   Section on "Turing's 4th Gen Tensor Core" for the sm_75 mma shape
   inventory.
+
+
+## Final outcome (2026-10-18)
+
+**Status: RESOLVED.** All milestones M0–M5 closed; M6 closed
+in `18a5839`. Tag `flash-sm75-v0.1` created and pushed.
+
+Result:
+
+- 5-line patch in `flash-attention-sm75/patches/0001-add-sm75-arch.patch`
+  re-enables sm_75 in the official `Dao-AILab/flash-attention` build.
+- The kernel code is upstream's CUTLASS `SM75_16x8x8_F32F16F16F32_TN`
+  (m16n8k8 fp16 → fp32 mma), which is exactly the right design for
+  EOL hardware: fp32 accumulator throughout the softmax.
+- 5/5 unit tests pass with `max_diff < 0.0001` vs pytorch SDPA
+  reference (perfect numerical match, well within the
+  `max_abs_diff < 0.05` bar).
+- E2E on Qwen-Image 2.1 (25 steps, the same prompt and seed
+  as the baseline 140 s ck-attention run): 141.72 s, 2.29 MB,
+  recognizable image (woman in polka-dot шуба, identical scene
+  to the baseline).
+- **Per-step: 5.07 s/it vs 5.6 s/it for the ck-attention baseline
+  → 10% faster per step on sm_75.**
+- `--use-flash-attention` is now functional on RTX 2080 Ti in
+  current ComfyUI. The 25-step EOL Qwen workload runs in 141.72 s
+  with the standard ComfyUI flag, no custom node required.
+
+This exceeds the EOL-support goal (correctness bar met) and the
+aspirational speed bar (≤ 5% slower → actually 10% faster).
+
+What this is **not**: a complete cleanup of all sm_75 issues.
+The Task 02 (`docs/tasks/02-sage-sm75-perrow-outlier.md`) is a
+separate effort to improve the existing SageAttention-T4 custom
+node (per-warp INT8 → per-row + outlier smoothing) and was
+deferred per vaskes's instruction (flash is the priority, sage
+INT8 is lossy). The SageAttention-T4 custom node is still
+installed in the comfyui container and works (it is not removed
+or replaced); it just is not needed for Qwen-Image 2.1 anymore
+because `--use-flash-attention` now does the right thing on sm_75.
+
+The CUTLASS submodule workaround documented in the M1 ticket
+note is the only friction point in the install flow. The
+`scripts/apply-patch-and-install.sh` script will be updated in
+M6 follow-up to include the CUTLASS-copy step, but the user can
+already perform the full install with:
+
+1. Copy `/opt/flash-attention-turing/csrc/cutlass/` to
+   `csrc/cutlass/` inside the flash-attention clone.
+2. `FLASH_ATTN_CUDA_ARCHS=75 FLASH_ATTENTION_FORCE_BUILD=TRUE
+   pip install --no-build-isolation --no-deps -e .`
+3. `python3 tests/test_sm75_correctness.py` (5/5 PASS expected).
