@@ -1,50 +1,69 @@
-# Task 01: FlashAttention native for sm_75 (Turing)
+# Task 01: FlashAttention for sm_75 (Turing) — restoring EOL support
 
 | Field | Value |
 |---|---|
 | **Repo** | `vaskes/comfyui-2080ti-turing` (in `docs/tasks/`) |
-| **Target HW** | NVIDIA RTX 2080 Ti, sm_75 (Turing), 22 GB VRAM |
+| **Target HW** | NVIDIA Turing, sm_75 (RTX 2080 Ti, RTX 2080, RTX 2070, Tesla T4, Quadro RTX) — **EOL hardware** |
 | **Date created** | 2026-10-17 |
 | **Status** | NOT STARTED |
 | **Owner (proposer)** | vaskes |
 | **Implementation** | Mavis coder (this Mavis session or future one) |
 | **Code review** | Qwen (separate agent, called per checkpoint) |
-| **Branch convention** | `flash-sm75-native-v0.1`, `...-v0.2`, ... |
+| **Branch convention** | `flash-sm75-v0.1`, `...-v0.2`, ... |
 | **Estimated effort** | 7–10 working days (one engineer) |
-| **Outcome type** | New ComfyUI custom node + CUDA extension in this repo |
+| **Outcome type** | Either: (a) a new ComfyUI custom node + CUDA extension in this repo, OR (b) a fork of `Dao-AILab/flash-attention` that restores sm_75 support upstream — **decided at M0** |
 
 ---
 
 ## Abstract
 
-We need a **native sm_75 (Turing) FlashAttention kernel** that produces **correct
-output** on RTX 2080 Ti in **less time than the current 140 s baseline**
-(`--use-ck-attention` + original bf16 Qwen-Image 2.1 models, comfy_kitchen
-`sol_attn`).
+We need **flash attention to work on sm_75 (Turing) hardware in current
+ComfyUI**, for **any model**, with correct quality. This is **not**
+a "make Qwen faster than 140 s" task — it is an **EOL hardware support
+restoration** task.
 
-The current state of attention on sm_75 is:
+The official `Dao-AILab/flash-attention` library has **dropped sm_75
+support** in recent releases — not because sm_75 is fundamentally broken,
+but because NVIDIA has marked Turing as EOL and the maintainer decided
+not to keep the sm_75 path tested. This is a maintenance policy decision,
+not a hardware impossibility. The two community forks (`ssiu/flash-attention-turing`
+and `KLM-corporation/flash-attention-2080ti`) try to keep sm_75 alive but
+both produce gray-square garbage for diffusion models on sm_75 (validated
+2026-10-17, see Context below).
+
+The goal of this task is to **make flash attention a working, quality-correct
+attention backend in current ComfyUI for sm_75**, so any user with a
+Turing GPU can run `--use-flash-attention` and get a correct image,
+regardless of the model. The reference for "correct" is whatever the
+current `--use-ck-attention` (comfy_kitchen `sol_attn`) produces today
+— not pytorch SDPA, not bf16, not fp16 native, just the existing
+production output for any given model + prompt.
+
+**Why this is hard and interesting:** sm_75 (Turing) has *no* fp16
+attention tensor-core path. All existing `flash_attn` kernels fail on
+this architecture because they convert bf16 storage → fp16 for compute,
+and fp16's ~7-bit mantissa cannot hold the bf16-scale attention scores'
+softmax precision. The output of those kernels has std 0.81 vs reference
+0.12 (a 6.6× distortion in output distribution, validated 2026-10-17).
+This is a **kernel design** problem, not a hardware impossibility.
+
+The current state of attention on sm_75 (all measured 2026-10-17 on
+RTX 2080 Ti with Qwen-Image 2.1, 25 steps, seed=65451515):
 
 - `pytorch SDPA` (default) — 175 s for 25 steps, correct output
-- `comfy_kitchen sol_attn` (`--use-ck-attention`) — 140 s, correct output
-- `flash_attn` (any fork — ssiu, KLM-corporation) — 107–130 s, **gray square garbage**
-- `SageAttention-T4` (THE-ANGEL-AI) — 165 s, **purple/green dot garbage**
-
-We need a **new kernel** that beats 140 s while keeping quality equivalent to
-the comfy_kitchen baseline.
-
-**Why this is hard and interesting:** sm_75 (Turing) has *no* fp16 attention
-tensor-core path. All existing `flash_attn` forks fail on this architecture
-because they convert bf16 storage → fp16 for compute, and fp16's ~7-bit
-mantissa cannot hold the bf16-scale attention scores' softmax precision. The
-output of those kernels has std 0.81 vs reference 0.12 (a 6.6× distortion in
-output distribution).
+- `comfy_kitchen sol_attn` (`--use-ck-attention`) — 140 s, correct output, **current production baseline**
+- `flash_attn` (Dao-AILab official, dropped sm_75) — N/A, does not build
+- `flash_attn` ssiu fork — 107 s, **gray square garbage**
+- `flash_attn` KLM-corporation fork — 130 s, **gray square garbage**
+- `SageAttention-T4` (THE-ANGEL-AI, INT8 path) — 165 s, **dot garbage** — see `docs/tasks/02-sage-sm75-perrow-outlier.md`
 
 We have two real architectural choices for a sm_75 flash-style kernel:
 
 1. **fp16 tensor core + fp32 accumulation in softmax** — use the *general*
-   mma.fp16.fp16.fp16 instruction that Turing has for normal GEMM, with K
-   broken into m8n8k4 tiles, and run softmax in fp32 with online correction
-   (FlashAttention algorithm). This avoids the precision-loss trap.
+   `mma.m8n8k4.f16.f16.f16.f16` (fp32 accumulator) that Turing has for
+   normal GEMM, with K broken into m8n8k4 tiles, and run softmax in fp32
+   with online correction (FlashAttention algorithm). This avoids the
+   precision-loss trap. This is the "new kernel" path.
 2. **cp.async + manual fp16 GEMM with online softmax** — same as above but
    using `cp.async.bulk` for K/V loads to keep the SM busy. This is the
    Ampere-style FlashAttention pattern; Turing has `cp.async` (added in
@@ -53,6 +72,13 @@ We have two real architectural choices for a sm_75 flash-style kernel:
 The goal of this task is to **build option 1 first** (simpler, no
 cp.async surface), validate it, and then optionally add option 2 as a
 separate kernel in the same extension for comparison.
+
+**Crucial framing for the implementer:** the success criterion is
+**"any diffusion model runs correctly with `--use-flash-attention` on
+sm_75"**, not "Qwen runs in 90 s". Speed is a secondary concern; the
+user-stated goal is EOL hardware support. The M5 milestone (Speed
+validation) is therefore framed as "no worse than the current ck-attention
+baseline" rather than "strictly beats 140 s for Qwen specifically."
 
 ---
 
@@ -73,11 +99,12 @@ for the new kernel** (same setup.py, same include paths, same torch patches).
 | Setup | Time | Output (bytes) | Verdict |
 |---|---|---|---|
 | pytorch SDPA (default) | 175 s | 2 339 947 | ✅ correct |
-| `ck-attention` (comfy_kitchen) | 140 s | 2 283 593 | ✅ correct, **baseline** |
+| `ck-attention` (comfy_kitchen) | 140 s | 2 283 593 | ✅ correct, **current production baseline** |
+| `flash_attn` Dao-AILab official | N/A | N/A | dropped sm_75, does not build on sm_75 |
 | `flash_attn` ssiu fork | 107 s | gray 24 KB | ❌ |
-| `flash_attn` KLM fork | 130 s | gray 24 KB | ❌ |
-| `SageAttention-T4` (THE-ANGEL-AI) | 165 s | 2 773 743 (dot garbage) | ❌ |
-| `SageAttention-T4 smooth_k=False` | 160 s | 2 769 084 (dot garbage) | ❌ |
+| `flash_attn` KLM-corporation fork | 130 s | gray 24 KB | ❌ |
+| `SageAttention-T4` (THE-ANGEL-AI) | 165 s | 2 773 743 (dot garbage) | ❌ (separate task: 02) |
+| `SageAttention-T4 smooth_k=False` | 160 s | 2 769 084 (dot garbage) | ❌ (separate task: 02) |
 
 Reference output of the **baseline** (ck-attention, 140 s, 2.28 MB) is
 captured at `/workspace/output/qwen-history/Qwen_image_2.1_best_140s.png`
@@ -104,31 +131,132 @@ softmax accumulator and online correction.
 
 ## Problem we solve
 
-**The single concrete problem:** *make Qwen-Image 2.1 on RTX 2080 Ti
-faster than 140 s without breaking quality.*
+**The single concrete problem:** *make `--use-flash-attention` produce
+correct, recognizable output for any diffusion model on RTX 2080 Ti (sm_75)
+in the current ComfyUI.* Speed is secondary; correctness is primary.
 
-Secondary problem (do not lose sight of): the kernel should also work for
-**Minimax H3 (INT8 convrot)**. H3 currently runs at 1:45 with
-`--use-ck-attention`. A native flash kernel for H3 should at minimum not
-make it slower; ideally faster (target: ≤ 1:20, ~25% reduction).
+Today, on sm_75, `--use-flash-attention` is effectively broken for any
+diffusion model: it produces a gray square (Qwen-Image 2.1, validated
+2026-10-17), and H3 has the same problem (the model that was originally
+tested by the fork authors). The two community forks that try to keep
+sm_75 alive (`ssiu/flash-attention-turing`, `KLM-corporation/flash-attention-2080ti`)
+both fail the same way. The official `Dao-AILab/flash-attention` dropped
+sm_75 support entirely, citing Turing as EOL — but the user base still
+runs RTX 2080 Ti cards in production and the maintainer of comfyui-2080ti-turing
+specifically wants to keep this hardware working with the current ComfyUI.
+
+The scope of "any diffusion model" is intentionally broad. Concretely,
+the kernel must work for (at minimum):
+
+- **Qwen-Image 2.1** (bf16 + INT8-quant text encoders) — the test bench
+  used throughout this repo
+- **Minimax H3** (INT8 convrot) — also a known test bench in this repo
+- Any future model that ComfyUI master ships — the kernel must be
+  general, not Qwen-specific
+
+Reference for "correct" is whatever the current `--use-ck-attention`
+(comfy_kitchen `sol_attn`) produces today for the same model + prompt.
+We are not trying to beat pytorch SDPA's quality or to match some
+abstract "fp16 reference" — we are trying to match the **existing
+production output** so that switching from `--use-ck-attention` to
+`--use-flash-attention` does not visibly change the image.
+
+Speed is a secondary, aspirational concern:
+
+- If the new flash kernel produces correct output and is **the same
+  speed as** the ck-attention baseline (~140 s for Qwen), that is a
+  success. The user can then choose either backend based on other
+  considerations (e.g. memory footprint, future model compatibility).
+- If the new flash kernel is **faster** than ck-attention, that is a
+  bonus.
+- If the new flash kernel is **slower**, it is still a success as
+  long as it is correct, because the goal is EOL support, not a
+  speed record.
 
 What we **do not** try to solve in this task:
 
-- bf16 → fp16 model weight conversion (proven to break qwen-image 2.1, see
-  previous commit on this repo).
+- bf16 → fp16 model weight conversion (proven to break qwen-image 2.1
+  in a previous commit on this repo).
 - Model-side quantization (w4a8, w6a8, etc.) — out of scope, not an
   attention problem.
 - New comfy_kitchen backend integration — out of scope, the new kernel
-  ships as a standalone custom node that patches `optimized_attention_override`
-  exactly like `SageAttention-T4` does.
+  ships as a standalone custom node that patches
+  `optimized_attention_override` exactly like `SageAttention-T4` does,
+  OR a fork of `Dao-AILab/flash-attention` that we use directly
+  (see "How to solve" → "Strategy selection" below).
+- Restoring sm_75 support to `comfy_kitchen` itself. Out of scope; the
+  comfy_kitchen maintainer has their own sm_75 work in `cuda`/`eager`
+  backends. Our work is the *flash* backend, not comfy_kitchen.
 
 ---
 
 ## How to solve
 
-### Architecture
+### Strategy selection (decided at M0)
 
-A single new Python package + CUDA extension under
+There are **two viable code paths** for restoring flash-attention to sm_75
+in current ComfyUI. The M0 milestone (below) is dedicated to choosing
+between them. The choice determines the rest of the milestone sequence.
+
+**Strategy A — New kernel from scratch** (the path the rest of this
+task currently assumes):
+
+- Build a brand-new CUDA extension at `custom_nodes/FlashAttention-sm75/`
+  with the kernel pseudocode in the "CUDA kernel design" section below.
+- Maintain a custom node that patches `optimized_attention_override`
+  in ComfyUI to dispatch to the new kernel.
+- Pros: full control over the sm_75 path, no dependency on upstream
+  maintainer, easy to iterate locally.
+- Cons: ~7–10 days of CUDA dev work; we own the maintenance burden
+  forever; future flash-attn algorithmic improvements (FlashAttention 3,
+  FlashAttention 4, etc.) will not flow in automatically.
+
+**Strategy B — Fork `Dao-AILab/flash-attention` and restore sm_75**:
+
+- The official flash-attention repository dropped sm_75 in a recent
+  release. The pre-drop code is still in git history (`git log` on
+  the official repo, find the last release with sm_75 in `csrc/flash_attn/src/`).
+- Fork the official repo, restore the sm_75 build configuration
+  (`CUDA_ARCH_FLAGS` should not exclude sm_75; the `sm_75` source
+  files in `csrc/flash_attn/src/sm75/` should not be `#ifdef`d out),
+  and fix the kernel for the bf16 → fp16 precision issue (the core
+  reason all sm_75 forks fail: the softmax accumulator must be fp32,
+  not fp16; the QK^T mma must be the sm_75-native fp32-accumulator
+  variant; the PV mma must be fp16, not bf16).
+- The result is a working `pip install` package that ComfyUI's
+  `--use-flash-attention` flag will pick up natively (no custom
+  node needed, no ComfyUI code change).
+- Pros: algorithmic improvements from upstream flow in; we own only
+  the sm_75-specific patches; the deliverable is a known interface
+  (`from flash_attn import flash_attn_func`) so ComfyUI integration
+  is free; smaller code surface than building from scratch.
+- Cons: we depend on the official repo continuing to maintain the
+  non-sm_75 paths; the sm_75 fix may conflict with future changes
+  in the official repo; we need to upstream the fix (or accept
+  maintaining a long-lived fork).
+
+**The M0 milestone (research) decides between A and B.** The
+recommendation in this document is **start with B** (fork upstream)
+because:
+
+1. The CUDA dev cost is roughly the same (~7–10 days either way),
+   but the deliverable for B is a much cleaner integration with
+   ComfyUI.
+2. The sm_75 code in the official flash-attention repo (pre-drop)
+   already has the right structure; we are fixing a specific
+   precision bug, not building the whole thing.
+3. Future flash-attention versions (FA3, FA4) will land automatically
+   on sm_80+; only the sm_75 path needs our patch, and the sm_75
+   path is geometrically the same in every version (the hardware
+   doesn't change).
+
+If M0 selects strategy A, the rest of the milestones below apply
+as written. If M0 selects strategy B, milestones M1 (build infra)
+and M3 (ComfyUI integration) are simpler (no custom node needed),
+and M2 (kernel correctness) is reframed as "fix the sm_75 source
+files in the fork, add a test that builds on sm_75."
+
+
 `custom_nodes/FlashAttention-sm75/`. Mirrors the structure of
 `SageAttention-T4/` so a future Mavis can diff them. Two CUDA kernels:
 
@@ -361,7 +489,54 @@ Each milestone is a **discrete deliverable** with explicit pass criteria.
 Do not advance to the next milestone until the current one's pass
 criteria are met and Qwen code review has approved.
 
-### M1 — Build infrastructure (1 day)
+### M0 — Strategy selection (0.5 day)
+
+This milestone must be completed **before** M1 begins. It decides
+between Strategy A (new kernel from scratch) and Strategy B (fork
+`Dao-AILab/flash-attention` and restore sm_75). The rest of the
+milestones below assume Strategy A; if M0 selects Strategy B, the
+subsequent milestones are reframed accordingly (see "Strategy
+selection" section above for the reframing).
+
+- [ ] Research the official `Dao-AILab/flash-attention` repository
+  history. Use `git log --all --oneline | head -100` and `git tag | sort -V | tail -30`
+  to find the last release that supported sm_75 (look for `sm_75` in
+  `csrc/flash_attn/CMakeLists.txt` or `setup.py`).
+- [ ] Clone the official repo at the pre-drop commit to a temporary
+  directory on the workstation host. Confirm it builds on sm_75 with
+  the current image's toolchain (torch 2.14.1+cu130, GCC 13.3, CUDA
+  toolkit 13.0) — using the same `pip install --no-build-isolation`
+  pattern as the existing `SageAttention-T4` setup.
+- [ ] Run a single forward pass of the pre-drop flash-attn on a small
+  Qwen attention input (`B=1, H=4, L=128, D=128`, bf16) and capture
+  the output. Compare with pytorch SDPA reference. If the pre-drop
+  code already produces correct output, Strategy B is just "re-enable
+  sm_75 in the build" (a much smaller change). If the pre-drop code
+  also produces garbage, Strategy B is "fix the sm_75 kernel the same
+  way Strategy A would" (same effort, but with cleaner ComfyUI
+  integration as the upside).
+- [ ] **Qwen code review:** review the strategy choice, the commit
+  hash of the pre-drop code, the build steps to reproduce. Mavis
+  coder should present the evidence (benchmark output, build log
+  excerpt) and Qwen approves A or B.
+- [ ] Document the decision in `docs/tasks/01-flash-sm75-native.md`
+  under "Strategy selection" — append a one-paragraph note explaining
+  which strategy was chosen and why, with the pre-drop commit hash
+  if Strategy B was chosen.
+
+**Pass:** Strategy A or Strategy B is selected and documented, and
+the rest of the milestones below are re-anchored to the choice.
+
+### M1 — Build infrastructure (1 day, Strategy A only)
+
+If M0 selected Strategy B, this milestone is **replaced** by the
+fork-and-rebuild work; the success criteria are the same: a
+working build that produces a `flash_attn` Python module importable
+from the ComfyUI container's venv.
+
+- [ ] `custom_nodes/FlashAttention-sm75/` directory created with the file
+  layout above.
+- [ ] `setup.py` and `pyproject.toml` copy-validated against
 
 - [ ] `custom_nodes/FlashAttention-sm75/` directory created with the file
   layout above.
@@ -458,19 +633,24 @@ and the disabled workflow matches the baseline at 140 s.
 
 - [ ] `bench/bench_flash_sm75.py` runs the workflow 3 times with
   warm cache, reports median time.
-- [ ] The new kernel **strictly beats 140 s** for Qwen-Image 2.1
-  (25 steps, seed=65451515, prompt as in the baseline).
-- [ ] If the new kernel is **slower** than 140 s, this milestone fails
-  and Mavis must investigate: is the kernel being called at all? Is
-  the attention shape compatible? Is the per-call overhead of
-  fp32→fp16→fp32 casts eating the speedup?
+- [ ] The new kernel's Qwen-Image 2.1 time must be **at most 5% slower**
+  than the ck-attention baseline (140 s × 1.05 = 147 s). This is the
+  *correctness-and-compatibility* bar; speed beyond this is a bonus,
+  not a requirement (the user-stated goal is EOL support, not speed).
+- [ ] If the new kernel is **more than 5% slower**, investigate the
+  cause: is the kernel being called at all? Is the attention shape
+  compatible? Is the per-call overhead of fp32↔fp16 casts eating the
+  speedup? Document the investigation in `KNOWN_ISSUES.md`.
 - [ ] H3 (Minimax H3) end-to-end speed at most 5% slower than the
-  baseline 1:45. This is the lower bar — H3 has more attention ops
-  total, so the kernel's per-op overhead matters more.
+  baseline 1:45. Same logic — correctness is the bar, speed is bonus.
+- [ ] (Optional, bonus) If the new kernel is **strictly faster** than
+  the ck-attention baseline on both Qwen and H3, document the speedup
+  in the commit message and in the root `README.md`.
 - [ ] **Qwen code review:** review the bench script, validate the
   methodology (warm cache, median of 3, same prompt and seed).
 
-**Pass:** Qwen median time < 140 s, H3 median time ≤ 1:45 × 1.05.
+**Pass:** Qwen median time ≤ 147 s, H3 median time ≤ 1:45 × 1.05.
+The 140 s ceiling is **not** a pass criterion (it is a stretch goal).
 
 ### M6 — Documentation, README, commit (0.5 day)
 
@@ -638,28 +818,31 @@ of context, link to commit that addresses it, link to follow-up if open.)*
 
 A task is **resolved** when:
 
-1. All milestones M1–M6 are checked off.
+1. All milestones M0–M6 are checked off.
 2. All test cases T1–T6 pass.
-3. Qwen code review has approved all five checkpoints.
+3. Qwen code review has approved all six checkpoints.
 4. The commit is pushed and tagged.
 5. The root `README.md` is updated.
 
-If **M5 fails** (the new kernel is slower than 140 s despite M1–M4
-passing), this is **not** a failure of the task in the sense of "wasted
-work" — it is a **negative result** that should still be committed and
-documented. The repo gains:
+The bar for "resolved" is **EOL support restored**, not "fastest
+flash kernel." A working, correct (quality OK) flash kernel for sm_75
+that is the same speed as ck-attention is a successful resolution of
+this task.
 
-- A working, correct (quality OK) sm_75 flash kernel that happens to
-  not be faster than the comfy_kitchen baseline. This is **notable**
-  because it rules out the simple "write a flash kernel" path for
-  further speedup, and points future work at **model-side optimization**
-  (w4a8 quantization, turbo variants) or **a different attention
-  algorithm** entirely (sparse attention, linear attention).
+If **M5 fails** (the new kernel is more than 5% slower than the
+ck-attention baseline despite M1–M4 passing), this is **not** a
+failure of the task — the kernel is still correct and provides
+`--use-flash-attention` as a valid backend choice. It is a **negative
+result on the speed bonus axis** that should be documented honestly
+in `KNOWN_ISSUES.md` and in the commit message. The repo still gains
+a working EOL-support flash kernel, and future work can target speed
+separately.
 
 If **M4 fails** (the kernel produces garbage even with fp32 softmax
-accumulator), the most likely cause is:
+accumulator), the most likely causes are:
 
 - An mma shape mismatch (e.g. using `m8n8k8` instead of `m8n8k4`).
+  `m8n8k8` fp16 has fp16 accumulator and is the precision-loss trap.
 - An accumulator discipline bug (e.g. exp() in fp16 instead of fp32).
 - A wrong `ldmatrix` layout assumption (Turing has subtle differences
   vs Ampere in how fragments are laid out — the THE-ANGEL-AI code
@@ -675,6 +858,22 @@ M2 test cases means a bug; bisect the test cases to localize.
 The microbench measures performance; **the unit tests in M2 measure
 correctness.** They are different. If the unit tests fail, the
 microbench result is meaningless.
+
+**Strategy-specific notes:**
+
+- If M0 selected Strategy B (fork `Dao-AILab/flash-attention`): the
+  end-to-end workflow integration is via `pip install -e .` of the
+  fork, and ComfyUI's existing `--use-flash-attention` flag picks
+  up the result automatically. No custom node, no
+  `optimized_attention_override` patch. The M3 (ComfyUI integration)
+  milestone is therefore "rebuild the image with the patched
+  flash-attn installed" and re-run the existing test workflows
+  directly.
+- If M0 selected Strategy A (new kernel): the custom node at
+  `custom_nodes/FlashAttention-sm75/` is the integration point, and
+  the workflow must include `FlashAttentionT4_Apply` to use the new
+  kernel. This is the path the rest of the milestones currently
+  describe.
 
 ---
 
