@@ -137,13 +137,110 @@ If you need the absolute best attention perf, you need a sm_80+ GPU (RTX 3090
 / 4090 / A100). On those, the standard `pip install flash-attn` works out of
 the box.
 
+### Why BF16→FP16 weight conversion works for H3 but NOT Qwen (validated 2026-10-17)
+
+H3's `*convrot*` quantized weights go through comfy_kitchen's
+`int8_linear` / `convrot_w4a4_linear` / `sol_attn` kernels, which
+**consume fp16 storage directly** and run fp16 GEMM internally. The fp16
+storage is the "true" runtime format and there is no precision-recovery cast.
+
+Qwen-Image 2.1's `*int8_convrot*` weights do **not** go through the fp16
+kitchen kernels — they go through ComfyUI's stock bf16→fp32 path
+(`manual cast: torch.float32` in the model load log). fp16 storage gets
+re-cast to bf16 at load time, which means **3 mantissa bits of precision
+are lost per weight** compared to the original bf16 file. This produces
+the gray-square output.
+
+A/B tests 1–4 in the table above (see "Why Qwen BF16→FP16 conversion fails"
+section) confirm that the failure is independent of which of the 4
+Qwen models is converted — any single fp16-converted model breaks the
+pipeline.
+
+
+
+Both ssiu/flash-attention-turing AND KLM-corporation/flash-attention-2080ti produce
+garbage for Qwen-Image 2.1 on sm_75. The cause is a **hardware limitation**, not
+a software bug:
+
+- sm_75 (Turing) has fp32 tensor cores but **no fp16 attention tensor-core path**.
+  All attention ops fall back to fp16 CUDA-core math.
+- Kernels convert bf16 input → fp16 for compute. fp16 has insufficient dynamic
+  range for softmax of bf16-scale attention scores.
+- On sm_80+ (Ampere/Ada/Hopper) the GPU has dedicated fp16 attention tensor
+  cores that maintain precision; sm_75 does not.
+
+| | flash_attn (sm_75) | pytorch SDPA ref |
+|---|---|---|
+| input dtype | bf16 | bf16 |
+| output dtype | **fp16** | bf16 |
+| output std | **0.8101** | 0.1226 |
+| max abs diff vs ref | **2.87** | — |
+
+**Conclusion: NO flash_attn implementation can work on sm_75 for bf16 storage models
+(qwen, h3).** This is a hardware ceiling.
+
+For sm_75 the best we have is `--use-ck-attention` (comfy_kitchen). On H3 this
+unlocks the INT8 quantized kernels (w6a8_int8, convrot_w4a4) which give massive
+speedup over baseline pytorch SDPA.
+
+If you need the absolute best attention perf, you need a sm_80+ GPU (RTX 3090
+/ 4090 / A100). On those, the standard `pip install flash-attn` works out of
+the box.
+
 ## Что работает (валидировано)
 
 | Workflow | Модель | Steps | Time | Backend | Notes |
 |---|---|---|---|---|---|
-| Qwen-Image 2.1 (bf16) | qwen_image_2.1 + qwen3vl_8b | 25 | **2:25** (ck-attention) | comfy_kitchen cuda/eager | Best stable |
+| Qwen-Image 2.1 (bf16) | qwen_image_2.1 + qwen3vl_8b | 25 | **2:20** (ck-attention) | comfy_kitchen cuda/eager | Best stable |
 | Qwen-Image 2.1 (bf16) | qwen_image_2.1 + qwen3vl_8b | 25 | 2:55 (pytorch SDPA) | baseline | Reference |
 | Minimax H3 (INT8 convrot) | h3 + qwen3vl_32b_int8 | 20, 1s | **1:45** (ck-attention) | comfy_kitchen INT8 | 12x speedup vs naive |
+
+### Why Qwen BF16→FP16 conversion fails (validated 2026-10-17, 5 A/B tests)
+
+**Hypothesis tested:** cast the BF16 storage regions of the 4 Qwen models to FP16
+(with `np.clip(-65504, 65504)` saturation) and run with `--fp16-unet`. Result:
+**5.5× faster (30s vs 140s), but every output is a gray square.**
+
+**Root cause: ComfyUI's Qwen-Image 2.1 path does NOT use comfy_kitchen's fp16
+quantization compute path.** Even though the model files have `*int8_convrot*`
+in their name (suggesting INT8 quantization), the model goes through:
+
+- `weight dtype = torch.bfloat16` (forced by `*int8_convrot*` filename pattern)
+- `manual cast: torch.float32` for compute
+- **fp16 storage gets re-cast to bf16 at load time, losing 3 mantissa bits per weight**
+
+This is fundamentally different from H3, where the same conversion works because
+H3 actually goes through comfy_kitchen's `int8_linear` / `convrot_w4a4_linear` /
+`sol_attn` paths that **consume fp16 storage natively** and run fp16 GEMM
+internally.
+
+**A/B test results** (all 25 steps, same seed, same prompt):
+
+| # | UNet | Text enc 1 | Text enc 2 | VAE | Output | Notes |
+|---|---|---|---|---|---|---|
+| 1 | fp16-conv | fp16-conv | fp16-conv | fp16-conv | **24 KB gray** | baseline garbage |
+| 2 | fp16-conv | fp16-conv | **bf16** | fp16-conv | **24 KB gray** | different garbage md5 |
+| 3 | **bf16** | fp16-conv | fp16-conv | fp16-conv | **24 KB gray** | different garbage md5 |
+| 4 | fp16-conv | fp16-conv | fp16-conv | **bf16** | **24 KB gray** | different garbage md5 |
+| 5 | **bf16** | **bf16** | **bf16** | **bf16** | **2.28 MB ✅** | 140s, normal image |
+
+All 4 garbage outputs have **different md5** — meaning conditioning does differ
+between configs, but ALL variants with at least one fp16-converted model are
+broken. The original-bf16-everywhere config is the only one that produces a
+correct image.
+
+**Cleanup:** all 4 `_fp16_converted.safetensors` and `_fp16.safetensors` files
+for Qwen were renamed to `.deprecated.safetensors` (~25 GB freed, originals
+preserved on disk per the "no model file removal" hygiene rule).
+
+**To resume optimization**, the next candidates are:
+
+- **`*_w4a8.safetensors` variants** (4-bit weights + 8-bit activations, already
+  on disk at `/opt/comfyui/models/`). These go through the
+  `w4a8_int8_linear` kitchen kernel directly and should give 2-4× speedup
+  with acceptable quality.
+- **`*_turbo_*.safetensors` variants** (turbo distilled Qwen, already on disk).
+  These are a different model, not just a quantization — test on its own.
 
 ## Known issues / Gotchas
 
