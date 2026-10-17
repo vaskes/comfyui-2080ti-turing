@@ -1,0 +1,41 @@
+name: comfyui
+
+services:
+  comfyui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        COMFYUI_REF: master
+        COMFY_MANAGER_REF: main
+    image: comfyui-workstation:cu130-torch-stable-gcc
+    container_name: comfyui
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "0"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    ports:
+      - "8188:8188"
+    volumes:
+      # Модели, output, input, user, workflows — наружу хоста, чтобы переживали редеплой.
+      - /opt/comfyui/models:/opt/ComfyUI/models
+      - /opt/comfyui/output:/opt/ComfyUI/output
+      - /opt/comfyui/input:/opt/ComfyUI/input
+      - /opt/comfyui/user:/opt/ComfyUI/user
+      - /opt/comfyui/workflows:/opt/ComfyUI/workflows
+      - /opt/comfyui/custom_nodes:/opt/ComfyUI/custom_nodes
+      - /opt/comfyui/logs:/var/log/comfyui
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8188/system_stats', timeout=5); sys.exit(0 if r.status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ["0"]

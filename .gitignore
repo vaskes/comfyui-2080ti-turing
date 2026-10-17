@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# venv
+.venv/
+venv/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*~
+
+# Secrets / runtime state
+.env
+.env.*
+secrets/
+*.key
+*.pem
+
+# Docker
+.docker/
+docker-compose.override.yaml
+
+# Logs / build artifacts
+logs/
+*.log
+build/
+
+# Local-only dirs (use .gitkeep if you want them in repo)
+# models, output, input, user, workflows, custom_nodes — все runtime, не для репы
+models/
+output/
+input/
+user/
+workflows/
+custom_nodes/
