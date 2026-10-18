@@ -26,12 +26,13 @@ services:
       # COMFYUI_ARGS is the variable expanded by the Dockerfile CMD.
       # Override with COMFYUI_ARGS="--use-ck-attention" docker compose up -d
       # to change attention backend without editing this file.
-      # Default is empty; run with COMFYUI_ARGS env var to set the backend.
-      #   COMFYUI_ARGS="--use-sage-attention" docker compose up -d (default in our setup)
-      #   COMFYUI_ARGS="--use-ck-attention"   docker compose up -d (fastest correct)
-      #   COMFYUI_ARGS="--use-flash-attention" docker compose up -d (experimental v0.3)
+      # Default: --use-ck-attention (fastest correct, works for all models).
+      # Override at start time: COMFYUI_ARGS="--use-sage-attention" docker compose up -d
+      #   --use-sage-attention   fallback for workflows that use Sage Attn patch
+      #                            nodes by Kijai (int8 quant + kijai patch node)
+      #   --use-flash-attention  experimental v0.3 (H3 only, broken for Qwen int8_convrot)
       # The matrix runner always sets COMFYUI_ARGS explicitly.
-      COMFYUI_ARGS:
+      COMFYUI_ARGS: --use-ck-attention
     ports:
       - "8188:8188"
     volumes:
