@@ -1,0 +1,62 @@
+diff --git a/csrc/flash_attn/flash_api.cpp b/csrc/flash_attn/flash_api.cpp
+index 9964e0f..fb045ee 100644
+--- a/csrc/flash_attn/flash_api.cpp
++++ b/csrc/flash_attn/flash_api.cpp
+@@ -390,7 +390,7 @@ mha_fwd(at::Tensor &q,         // batch_size x seqlen_q x num_heads x round_mult
+     at::cuda::CUDAGuard device_guard{q.device()};
+ 
+     auto [cc_major, cc_minor] = get_compute_capability(get_current_device());
+-    bool is_sm8x_min = cc_major >= 8;
++    bool is_sm8x_min = cc_major >= 8 || (cc_major == 7 && cc_minor == 5);
+     TORCH_CHECK(is_sm8x_min, "FlashAttention only supports Ampere GPUs or newer.");
+ 
+     auto q_dtype = q.dtype();
+@@ -569,7 +569,7 @@ mha_varlen_fwd(at::Tensor &q,  // total_q x num_heads x head_size, total_q := \s
+     at::cuda::CUDAGuard device_guard{q.device()};
+ 
+     auto [cc_major, cc_minor] = get_compute_capability(get_current_device());
+-    bool is_sm8x_min = cc_major >= 8;
++    bool is_sm8x_min = cc_major >= 8 || (cc_major == 7 && cc_minor == 5);
+     TORCH_CHECK(is_sm8x_min, "FlashAttention only supports Ampere GPUs or newer.");
+ 
+     auto q_dtype = q.dtype();
+@@ -833,7 +833,7 @@ mha_bwd(const at::Tensor &dout,  // batch_size x seqlen_q x num_heads, x multipl
+     at::cuda::CUDAGuard device_guard{q.device()};
+ 
+     auto [cc_major, cc_minor] = get_compute_capability(get_current_device());
+-    bool is_sm8x_min = cc_major >= 8;
++    bool is_sm8x_min = cc_major >= 8 || (cc_major == 7 && cc_minor == 5);
+     TORCH_CHECK(is_sm8x_min, "FlashAttention only supports Ampere GPUs or newer.");
+ 
+     [[maybe_unused]] bool is_dropout = p_dropout > 0.0;
+@@ -1048,7 +1048,7 @@ mha_varlen_bwd(const at::Tensor &dout,  // total_q x num_heads, x head_size
+     at::cuda::CUDAGuard device_guard{q.device()};
+ 
+     auto [cc_major, cc_minor] = get_compute_capability(get_current_device());
+-    bool is_sm8x_min = cc_major >= 8;
++    bool is_sm8x_min = cc_major >= 8 || (cc_major == 7 && cc_minor == 5);
+     TORCH_CHECK(is_sm8x_min, "FlashAttention only supports Ampere GPUs or newer.");
+ 
+     [[maybe_unused]] bool is_dropout = p_dropout > 0.0;
+@@ -1268,7 +1268,7 @@ mha_fwd_kvcache(at::Tensor &q,                 // batch_size x seqlen_q x num_he
+     at::cuda::CUDAGuard device_guard{q.device()};
+ 
+     auto [cc_major, cc_minor] = get_compute_capability(get_current_device());
+-    bool is_sm8x_min = cc_major >= 8;
++    bool is_sm8x_min = cc_major >= 8 || (cc_major == 7 && cc_minor == 5);
+     TORCH_CHECK(is_sm8x_min, "FlashAttention only supports Ampere GPUs or newer.");
+ 
+     auto q_dtype = q.dtype();
+diff --git a/csrc/flash_attn/src/flash_fwd_launch_template.h b/csrc/flash_attn/src/flash_fwd_launch_template.h
+index b71ddf2..9655b67 100644
+--- a/csrc/flash_attn/src/flash_fwd_launch_template.h
++++ b/csrc/flash_attn/src/flash_fwd_launch_template.h
+@@ -14,7 +14,7 @@
+ namespace FLASH_NAMESPACE {
+ 
+ // Determine if the architecture supports FLASH and define a macro to handle parameter modifiers
+-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 750
+ #define ARCH_SUPPORTS_FLASH
+ #define KERNEL_PARAM_MODIFIER __grid_constant__
+ #else

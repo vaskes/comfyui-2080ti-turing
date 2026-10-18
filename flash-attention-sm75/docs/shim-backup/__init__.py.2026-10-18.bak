@@ -1,0 +1,124 @@
+"""Shim package: route the standard `flash_attn` API to `flash_attn_turing`.
+
+ComfyUI and other tools do `from flash_attn import flash_attn_func` with the
+standard API (dropout_p, softmax_scale, causal, ...). The official flash_attn
+from Dao-AILab does NOT support sm_75 (Turing). We provide
+`flash_attn_turing` (https://github.com/ssiu/flash-attention-turing) which does,
+but with a reduced API:
+
+  NOT supported by flash_attn_turing:
+    - dropout (no dropout_p)
+    - local / custom attention mask (no attn_mask)
+    - kv cache (no kvcache)
+
+  Supported: q, k, v, softmax_scale, causal
+
+This shim re-exports the small subset of the standard API that the Turing
+build implements. It also wraps the entry points to silently swallow the
+unsupported kwargs (`dropout_p`, `attn_mask`, `return_softmax`, etc.) so callers
+that pass them don't crash — but the shim also enforces: if you actually need
+dropout or a custom mask, fall back to pytorch SDPA.
+
+If the real `flash_attn` package is installed, this shim is shadowed because
+both occupy the `flash_attn` namespace. We don't try to detect — this shim
+is for the no-real-flash_attn case.
+"""
+
+import warnings
+import flash_attn_turing as _gpu  # noqa: F401
+
+# Pull in the native (raw) implementations
+from flash_attention_interface import (  # noqa: F401
+    flash_attn_func as _flash_attn_func_native,
+    flash_attn_kvpacked_func as _flash_attn_kvpacked_func_native,
+    flash_attn_qkvpacked_func as _flash_attn_qkvpacked_func_native,
+    flash_attn_varlen_func as _flash_attn_varlen_func_native,
+    flash_attn_varlen_kvpacked_func as _flash_attn_varlen_kvpacked_func_native,
+    flash_attn_varlen_qkvpacked_func as _flash_attn_varlen_qkvpacked_func_native,
+)
+
+
+def _warn_unsupported(kw: str, value, default_value):
+    if value != default_value:
+        warnings.warn(
+            f"flash_attn_turing shim: kwarg {kw!r}={value!r} is not supported by "
+            f"the Turing build and will be ignored (the real {kw} is {default_value!r}). "
+            f"For non-zero {kw}, fall back to pytorch SDPA.",
+            stacklevel=2,
+        )
+
+
+def flash_attn_func(q, k, v, dropout_p=0.0, softmax_scale=None, causal=False,
+                    return_attn_probs=False, **kwargs):
+    """Drop-in for flash_attn.flash_attn_func (Dao-AILab) using flash_attn_turing.
+
+    Notes:
+      - dropout_p is silently ignored (Turing build doesn't support dropout).
+      - return_attn_probs is silently ignored.
+      - attn_mask, alibi_slopes, etc. are not supported — caller should
+        fall back to pytorch SDPA when these are needed.
+    """
+    _warn_unsupported("dropout_p", dropout_p, 0.0)
+    _warn_unsupported("return_attn_probs", return_attn_probs, False)
+    # Strip any other unsupported kwargs the caller might pass
+    return _flash_attn_func_native(q, k, v, softmax_scale=softmax_scale, causal=causal)
+
+
+def flash_attn_kvpacked_func(q, kv, dropout_p=0.0, softmax_scale=None, causal=False,
+                             return_attn_probs=False, **kwargs):
+    _warn_unsupported("dropout_p", dropout_p, 0.0)
+    _warn_unsupported("return_attn_probs", return_attn_probs, False)
+    return _flash_attn_kvpacked_func_native(q, kv, softmax_scale=softmax_scale, causal=causal)
+
+
+def flash_attn_qkvpacked_func(qkv, dropout_p=0.0, softmax_scale=None, causal=False,
+                              return_attn_probs=False, **kwargs):
+    _warn_unsupported("dropout_p", dropout_p, 0.0)
+    _warn_unsupported("return_attn_probs", return_attn_probs, False)
+    return _flash_attn_qkvpacked_func_native(qkv, softmax_scale=softmax_scale, causal=causal)
+
+
+def flash_attn_varlen_func(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k,
+                           dropout_p=0.0, softmax_scale=None, causal=False,
+                           return_attn_probs=False, **kwargs):
+    _warn_unsupported("dropout_p", dropout_p, 0.0)
+    return _flash_attn_varlen_func_native(
+        q, k, v,
+        cu_seqlens_q=cu_seqlens_q, cu_seqlens_k=cu_seqlens_k,
+        max_seqlen_q=max_seqlen_q, max_seqlen_k=max_seqlen_k,
+        softmax_scale=softmax_scale, causal=causal,
+    )
+
+
+def flash_attn_varlen_kvpacked_func(q, kv, cu_seqlens_q, cu_seqlens_k,
+                                    max_seqlen_q, max_seqlen_k,
+                                    dropout_p=0.0, softmax_scale=None, causal=False,
+                                    return_attn_probs=False, **kwargs):
+    _warn_unsupported("dropout_p", dropout_p, 0.0)
+    return _flash_attn_varlen_kvpacked_func_native(
+        q, kv,
+        cu_seqlens_q=cu_seqlens_q, cu_seqlens_k=cu_seqlens_k,
+        max_seqlen_q=max_seqlen_q, max_seqlen_k=max_seqlen_k,
+        softmax_scale=softmax_scale, causal=causal,
+    )
+
+
+def flash_attn_varlen_qkvpacked_func(qkv, cu_seqlens, max_seqlen,
+                                     dropout_p=0.0, softmax_scale=None, causal=False,
+                                     return_attn_probs=False, **kwargs):
+    _warn_unsupported("dropout_p", dropout_p, 0.0)
+    return _flash_attn_varlen_qkvpacked_func_native(
+        qkv, cu_seqlens=cu_seqlens, max_seqlen=max_seqlen,
+        softmax_scale=softmax_scale, causal=causal,
+    )
+
+
+__version__ = "0.1.0-turing-shim"
+__all__ = [
+    "flash_attn_func",
+    "flash_attn_kvpacked_func",
+    "flash_attn_qkvpacked_func",
+    "flash_attn_varlen_func",
+    "flash_attn_varlen_kvpacked_func",
+    "flash_attn_varlen_qkvpacked_func",
+]
