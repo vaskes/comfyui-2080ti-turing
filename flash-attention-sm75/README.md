@@ -1,21 +1,24 @@
-# flash-attention-sm75
+# flash-attention-sm75 (experimental v0.3)
 
-Experimental sm_75 build of upstream Dao-AILab `flash-attention` 2.8.4.
-**Status**: works for H3, broken for Qwen int8_convrot. Use
-[SageAttention 1.0.6](../README.md#production-contract-2026-10-18)
-as the production default.
+Experimental **Dao-AILab flash-attention 2.8.4** build patched for sm_75
+(Turing) hardware. **Status: experimental, H3 only.**
+
+⚠️  **Not for production.** Use `--use-ck-attention` (default) or
+`--use-sage-attention` (Kijai patch fallback). Flash v0.3 is broken
+for Qwen int8_convrot (precision trap even with fp32-accumulator mma).
+See [`../tests/MATRIX.md`](../tests/MATRIX.md) for the full comparison.
 
 ## When to use
 
 ```bash
-# Only if you specifically need flash attention for H3
+# Only if you specifically need flash attention for H3 (experimental)
 COMFYUI_ARGS="--use-flash-attention" docker compose -f /opt/comfyui-git/compose.yaml up -d
 ```
 
 For H3 fp8/int8_convrot/w6a8, the v0.3 build is correct and
-~2x faster than sage. For Qwen bf16, the v0.3 build is correct
-but slow. **For Qwen int8_convrot, v0.3 produces garbage — use
-`--use-ck-attention` instead.**
+~2x faster than sage (210s vs 231s for int8_convrot). For Qwen bf16,
+the v0.3 build is correct but slow. **For Qwen int8_convrot, v0.3
+produces garbage — use `--use-ck-attention` instead.**
 
 ## Patches
 
@@ -69,18 +72,18 @@ Earlier v0.2.1 attempts:
   `site-packages/flash_attn/__init__.py` that routes to
   `flash_attn_turing` (ssiu community fork, m8n8k8 fp16-acc).
 - The shim shadows any editable install of the real sm_75 build.
-- The shim works for bf16/fp16 (Qwen) but is a precision trap for
-  int8/convrot weight models (H3).
+- The shim works for Qwen (bf16/fp16 inputs have enough precision
+  margin) but is a precision trap for int8/convrot weight models (H3).
 
 v0.3 bypasses the shim by:
 1. Renaming `site-packages/flash_attn/` to `flash_attn_shim_backup/`
 2. Adding a `.pth` file pointing to `/tmp/flash-attention-build`
 3. The `.so` is bind-mounted from the host
 
-This is done automatically by the matrix runner's `setup_v0_3_in_container()`
-helper on every container restart.
+This is done automatically by the matrix runner's
+`setup_v0_3_in_container()` helper on every container restart.
 
 ## Test results
 
-See [../tests/MATRIX.md](../tests/MATRIX.md) for the full 18-cell
+See [`../tests/MATRIX.md`](../tests/MATRIX.md) for the full 18-cell
 comparison (sage vs ck vs flash for every model/quant combination).
