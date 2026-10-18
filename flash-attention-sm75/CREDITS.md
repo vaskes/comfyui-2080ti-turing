@@ -41,7 +41,7 @@ code is upstream and governed by the BSD 3-Clause License (see
 
 ## Test models and workflows (vaskes hardware testbed)
 
-The end-to-end tests in `tests/test_sm75_e2e.py` exercise this patch
+The end-to-end tests in `tests/test_backends.py` and the matrix runner at `tests/matrix/run_matrix.py` exercise this patch
 on the following real models and workflows on the workstation:
 
 - **Qwen-Image 2.1** by Alibaba Qwen team. Apache-2.0.

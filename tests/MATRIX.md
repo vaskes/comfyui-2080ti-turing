@@ -12,7 +12,7 @@ ck is the default because it's fastest correct across all cells.
 sage is the Kijai-patch fallback because that custom node requires
 sage's specific attention layout.
 
-## Full matrix: 4 backends × 2 models × 4 quants
+## Full matrix: 3 backends × 2 models × 4 quants
 
 ### Qwen-Image 2.1 (T2I, 25 steps)
 
@@ -137,7 +137,6 @@ persists across container recreates.
 - Test results: `tests/matrix/matrix_results.jsonl`
 - Test outputs: `tests/results/matrix_2026-10-18/`
 - Matrix script: `tests/matrix/run_matrix.py` (now has `sage` as 4th backend)
-- Earlier matrices: `tests/FULL_MATRIX_REPORT.md`, `tests/SPEED.md`, `tests/H3_RESULTS.md`, `tests/V0.3_RESULTS.md`
 
 ## Date and environment
 

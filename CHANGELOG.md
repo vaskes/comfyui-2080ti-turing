@@ -21,7 +21,7 @@ All notable changes to this fork. Versions are tagged as
   - 1.5-2x slower than ck, but correct for any model.
   - Required for workflows that use the Kijai Sage Attn patch custom node.
   - Auto-installs on container start via entrypoint script.
-- **FlashAttention v0.3** (real sm_75 Dao-AILab build with 2-line patch) as
+- **FlashAttention v0.3** (real sm_75 Dao-AILab build with 5+1 line patch) as
   experimental (`--use-flash-attention`).
   - Patches preserved in `flash-attention-sm75/patches/0001-add-sm75-arch.patch`
     and `patches/0002-relax-arch-gates.patch` for reference.
@@ -49,7 +49,7 @@ workflows, flash only for H3 experimental work.
 Real sm_75 build of upstream Dao-AILab flash-attention 2.8.4.
 Discovered that sm_75 mma atom exists in `kernel_traits.h:30-36` but
 runtime gates `cc_major >= 8` and `__CUDA_ARCH__ >= 800` block it.
-2-line fix in `patches/0002-relax-arch-gates.patch`.
+5-site fix in flash_api.cpp + 1-site fix in flash_fwd_launch_template.h (6 lines total) in `patches/0002-relax-arch-gates.patch`.
 
 **Findings**:
 - Works correctly for H3 all quants.

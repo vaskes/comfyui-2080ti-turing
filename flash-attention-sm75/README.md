@@ -28,7 +28,7 @@ list in setup.py. 5 lines.
 `patches/0002-relax-arch-gates.patch` — relaxes the runtime gates
 that check `cc_major >= 8` and `__CUDA_ARCH__ >= 800`. Without
 this patch, the sm_75 build loads but the kernels print "FATAL:
-requires sm80-sm90" and return uninitialized memory. 2-line + 5-line
+requires sm80-sm90" and return uninitialized memory. 5 sites in flash_api.cpp + 1 site in flash_fwd_launch_template.h (6 lines total)
 fix in `flash_api.cpp`.
 
 ## Why v0.3 is slow on sm_75
@@ -52,13 +52,18 @@ workstation, bind-mounted to `/tmp/flash-attention-build/` inside the
 container. To rebuild from scratch:
 
 ```bash
+# This is the build recipe used on the workstation. For v1.0 production
+# users do NOT need to rebuild — the bind-mounted .so is sufficient.
+# The .so is pre-built at /opt/flash-sm75-build/flash_attn_2_cuda.cpython-312-x86_64-linux-gnu.so
+# and bind-mounted into the container at /tmp/flash-attention-build/.
+
 cd /opt/flash-sm75-build
 git apply patches/0001-add-sm75-arch.patch
 git apply patches/0002-relax-arch-gates.patch
 FLASH_ATTN_CUDA_ARCHS=75 \
   FLASH_ATTENTION_FORCE_BUILD=TRUE \
-  CPATH=$NVIDIA_CU13_INCLUDE \
-  LIBRARY_PATH=$NVIDIA_CU13_LIB \
+  CPATH=/opt/venv/lib/python3.12/site-packages/nvidia/cu13/include \
+  LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/nvidia/cu13/lib \
   pip install --no-build-isolation --no-deps -e .
 ```
 

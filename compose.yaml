@@ -12,14 +12,12 @@ services:
     container_name: comfyui
     restart: unless-stopped
     runtime: nvidia
-    # Use our entrypoint that auto-installs SageAttention 1.0.6 on first use.
-    # Script lives in bind-mounted /opt/flash-sm75-build (host) -> /tmp/flash-attention-build (container).
-    # Marker file in same bind-mount persists across container recreates.
-    # Entrypoint: auto-installs sage if missing, then exec ComfyUI with COMFYUI_ARGS.
-    # Default attention backend is sage (set in COMFYUI_ARGS below).
-    # Override via env: COMFYUI_ARGS=--use-ck-attention docker compose up -d
-    # See flash-attention-sm75/README.md for backend selection guide.
-    entrypoint: [/tmp/flash-attention-build/comfyui-entrypoint.sh]
+    # Entrypoint is baked into the image at /usr/local/bin/comfyui-entrypoint.sh
+    # (see Dockerfile). It auto-installs SageAttention 1.0.6 + pytest on first
+    # use (idempotent), then exec ComfyUI with $COMFYUI_ARGS.
+    # Override default backend (--use-ck-attention) via:
+    #   COMFYUI_ARGS="--use-sage-attention" docker compose up -d
+    entrypoint: [/usr/local/bin/comfyui-entrypoint.sh]
     environment:
       NVIDIA_VISIBLE_DEVICES: "0"
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
