@@ -45,9 +45,9 @@ Source:
 | Quant | SDPA | ck | flash (v0.2.1 shim) | flash (v0.3 real sm_75) |
 |---|---|---|---|---|
 | bf16 | (broken env, 12.9 KB) | 116.0s, 538 KB (v0.2.1) | 111.0s, 3.8 MB GARBAGE (v0.2.1) | 211.0s, 530 KB (v0.3 e2e) |
-| fp8 | 582.3s, 558 KB (this run) | (this run, in progress) | (v0.2.1) | (v0.3 not tested) |
-| int8_convrot | (this run, pending) | (this run, pending) | 111.0s, 3.8 MB GARBAGE (v0.2.1) | 211.0s, 530 KB (v0.3 e2e) |
-| w6a8 | (this run, pending) | (this run, pending) | (v0.2.1) | (v0.3 not tested) |
+| fp8 | 582.3s, 558 KB (this run) | 476.2s, 560 KB (this run) | (v0.2.1) | (v0.3 not tested) |
+| int8_convrot | 215.4s, 530 KB (this run) | 110.3s, 538 KB (this run) | 111.0s, 3.8 MB GARBAGE (v0.2.1) | 211.0s, 530 KB (v0.3 e2e) |
+| w6a8 | 455.9s, 492 KB (this run) | 355.6s, 554 KB (this run) | (v0.2.1) | (v0.3 not tested) |
 
 ## Headline conclusions
 
@@ -98,7 +98,19 @@ correct 2.30 MB PNG (recognizable woman in polka-dot shuba).
 This is faster than the v0.2.1 bf16 ck baseline (140s) because
 int8 convrot compresses the weights, so model load is faster.
 
-### 5. H3 SDPA is unusably slow without optimizations
+### 5. H3 int8_convrot is the fastest quant (ck: 110s)
+
+H3 int8_convrot with ck completed in 110.3s, faster than bf16 (116s).
+This is because the model is smaller in memory and loads faster,
+plus the int8 mma path on Turing is well-supported by ck.
+
+File sizes by quant (all 530-560 KB, correct):
+- fp8: 558-560 KB
+- int8_convrot: 530-538 KB
+- w6a8: 492 KB
+- bf16: 530 KB (v0.3)
+
+### 6. H3 SDPA is unusably slow without optimizations
 
 H3 fp8 + SDPA: 582s (9.7 min) - completed, correct output.
 H3 bf16 + SDPA (earlier broken env): stuck at 7+ min in init.
@@ -108,6 +120,25 @@ slower than the optimized paths because:
 - 38 GB model must offload to CPU (23 GB VRAM)
 - Each step requires moving data CPU to GPU
 - SDPA math backend does not use any sm_75 optimization
+
+## Final test matrix summary (all 7 tests passed)
+
+| Test | Time | Size | Result |
+|---|---|---|---|
+| qwen_int8_convrot_ck | 45.1s | 2.30 MB | CORRECT (woman in polka-dot shuba) |
+| h3_fp8_sdpa | 582.3s | 558 KB | CORRECT |
+| h3_fp8_ck | 476.2s | 560 KB | CORRECT |
+| h3_int8_convrot_sdpa | 215.4s | 530 KB | CORRECT |
+| h3_int8_convrot_ck | 110.3s | 538 KB | CORRECT (fastest H3) |
+| h3_w6a8_sdpa | 455.9s | 492 KB | CORRECT |
+| h3_w6a8_ck | 355.6s | 554 KB | CORRECT |
+
+ck vs SDPA on H3 (all quants):
+- fp8: ck 476s vs SDPA 582s = ck 18% faster
+- int8_convrot: ck 110s vs SDPA 215s = ck 49% faster (BIG WIN)
+- w6a8: ck 356s vs SDPA 456s = ck 22% faster
+
+ck wins on all quants, biggest win on int8_convrot (2x speedup).
 
 ## What is the recommended config for sm_75
 
