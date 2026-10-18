@@ -21,6 +21,30 @@ exactly which backend is fastest correct vs broken for every tested combination.
 
 The hardware is EOL. The repo is MIT. Use it.
 
+
+
+## Security Model
+
+**Container runs as root inside.** This is intentional for a workstation
+deployment with NVIDIA GPU access:
+
+- **Why root**: NVIDIA Container Runtime and CUDA libraries need
+  read/write access to `/dev/nvidia*` device nodes; bind-mounts
+  (`/opt/comfyui/*`, `/opt/flash-sm75-build`) are typically root-owned
+  on the host; `pip install` for missing test deps (sage, pytest)
+  requires write access to `/opt/venv`.
+- **Trust boundary**: the container is single-tenant (one user, one
+  workstation). ComfyUI's HTTP API listens on `--listen 0.0.0.0` for
+  local access only. **Do not expose port 8188 to the public internet.**
+- **What is NOT a concern here**: kernel-level isolation (nvidia-container-toolkit
+  handles that), filesystem isolation (Docker namespaces handle that).
+- **For a multi-tenant / cloud deployment**: add `USER comfyuser` to
+  the Dockerfile after creating the user with `useradd`, and chown
+  bind-mount targets. This is **out of scope for v1.0.x** (workstation-only).
+
+**No credentials are baked into the image.** SageAttention wheel is pulled
+from PyPI at build time; no model weights are committed.
+
 ## Full matrix: 3 backends × 2 models (6 model×quant combinations) = 18 cells, validated 2026-10-18
 
 Qwen has 2 quantizations (bf16, int8_convrot) and H3 has 4 (bf16, fp8, int8_convrot, w6a8),

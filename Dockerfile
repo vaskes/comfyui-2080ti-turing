@@ -73,7 +73,15 @@ RUN for i in 1 2 3 4 5; do \
 ARG COMFY_MANAGER_REF=main
 WORKDIR /opt/ComfyUI/custom_nodes
 RUN git clone --depth 1 --branch ${COMFY_MANAGER_REF} https://github.com/ltdrdata/ComfyUI-Manager.git && \
-    pip install -r ComfyUI-Manager/requirements.txt
+    pip install -r ComfyUI-Manager/requirements.txt && \
+    # Drop .git to save ~10 MB
+    rm -rf ComfyUI-Manager/.git
+
+# --- ComfyUI source cleanup ---
+# Drop .git (~500 MB) — we have the pinned commit. Users who want to
+# update run `git pull` in /opt/ComfyUI after the container starts.
+WORKDIR /opt/ComfyUI
+RUN rm -rf .git
 
 # --- Triton (нужен для современных attention kernels, не оптимизация, а зависимость) ---
 RUN pip install triton
