@@ -1,14 +1,14 @@
 # ComfyUI on RTX 2080 Ti (sm_75, Turing) — production fork
 
-This fork of [comfyui-2080ti-turing](https://github.com/vaskes/comfyui-2080ti-turing)
-ships **three attention backends** for the sm_75 (Turing) hardware that upstream
+This is a production fork of [comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI)
+with **three attention backends** for the sm_75 (Turing) hardware that upstream
 `flash-attention` 2.x no longer supports (EOL, no sm_75 mma). Production default
 is `comfy_kitchen` (ck) — fastest correct across all tested (model, quant)
 combinations. `SageAttention 1.0.6` is the fallback for workflows that use
 the Kijai Sage Attn patch custom node. `flash v0.3` is the experimental
 real sm_75 build (H3 only, broken for Qwen int8_convrot).
 
-See the [full matrix below](#full-matrix-4-backends--2-models--4-quants-24-cells-validated-2026-10-18) for which backend is fastest correct vs broken per cell.
+See the [full matrix below](#full-matrix-3-backends--2-models--4-quants-24-cells-validated-2026-10-18) for which backend is fastest correct vs broken per cell.
 
 ## TL;DR — what this repo is for
 
@@ -21,7 +21,7 @@ exactly which backend is fastest correct vs broken for every tested combination.
 
 The hardware is EOL. The repo is MIT. Use it.
 
-## Full matrix: 4 backends × 2 models × 4 quants (24 cells, validated 2026-10-18)
+## Full matrix: 3 backends × 2 models × 4 quants (24 cells, validated 2026-10-18)
 
 ### Qwen-Image 2.1 (T2I, 25 steps)
 
@@ -127,7 +127,7 @@ The container auto-installs SageAttention 1.0.6 on first start (idempotent).
 comfyui-2080ti-turing/
 ├── README.md                  # this file
 ├── CHANGELOG.md               # version history
-├── LICENSE                    # BSD-3-Clause (production)
+├── LICENSE                    # MIT (production)
 ├── NOTICE.md                  # third-party attributions
 ├── CREDITS.md                 # upstream project credits
 ├── Dockerfile                 # production image
@@ -160,7 +160,7 @@ default. The value is passed to `python3 main.py` inside the container.
 
 **At container start:**
 ```bash
-# default (sage)
+# default (ck)
 docker compose -f /opt/comfyui-git/compose.yaml up -d
 
 # override at start time
@@ -199,12 +199,13 @@ This fork started as a `comfyui-2080ti-turing` pure-config branch and
 gradually grew:
 - v0.1: flash-attention v0.2.1 shim (bf16/fp16 only, broken for int8)
 - v0.2.1: full matrix + ck baseline + flash attempts
-- v0.3: real sm_75 flash build via 2-line patch (correct for H3, broken for Qwen int8)
-- **v1.0 (this release)**: 3 attention backends — ck (default), sage (Kijai-patch fallback), flash v0.3 (experimental)
+- v0.3: real sm_75 flash build via 5+1 line patch (0001 + 0002) (correct for H3, broken for Qwen int8)
+- **v1.0 (this release)** (default: ck) — flip default to ck, sage as Kijai-patch fallback, flash experimental.
+- **v1.0.2** — release-readiness cleanup: MIT throughout, baked entrypoint, default(sage) leftovers fixed, 9/9 unit tests.: 3 attention backends — ck (default), sage (Kijai-patch fallback), flash v0.3 (experimental)
 
 Patches in `flash-attention-sm75/patches/` are the historical v0.3 work
 for the optional `--use-flash-attention` experimental path. They are
-NOT applied by default — the container ships with sage as default and
+NOT applied by default — the container ships with ck as default and
 flash is only loaded if `--use-flash-attention` is in `COMFYUI_ARGS`.
 
 ## Credits

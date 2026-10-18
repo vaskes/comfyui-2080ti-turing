@@ -1,5 +1,34 @@
 # Changelog
 
+
+## v0.3.0 — 2026-10-18 — real sm_75 build (investigation)
+
+**Scope: investigation only — not released, not in production default.**
+
+- Replaced the `flash_attn_turing` shim with a real sm_75 build of
+  `Dao-AILab/flash-attention` (5 sites in `flash_api.cpp` + 1 site in
+  `flash_fwd_launch_template.h`, no CUDA source changes).
+- 96 .cu files compiled in 2h 14min. .so = 400 MB.
+- E2E: H3 fp8/int8_convrot/w6a8 work correct (576.7s, 211s, 456s).
+  Qwen int8_convrot is **precision-trap broken** (sm_75 mma atom
+  `SM75_16x8x8_F32F16F16F32_TN` with k=8 vs sm_80's k=16).
+- **Verdict**: ~2x slower than ck on sm_75 (intrinsic mma atom
+  disadvantage). Kept as `--use-flash-attention` experimental flag.
+
+## v1.0.0 — 2026-10-18 — production release (parent repo)
+
+- Repo restructured: `tests/` at root, `flash-attention-sm75/` is
+  flash-only, `sage-attention-sm75/` is sage-only.
+- License: BSD-3-Clause → MIT (user decision: no know-how worth
+  fencing off).
+- Default: `comfy_kitchen` (ck) — fastest correct for all
+  (model, quant) cells.
+
+## v1.0.1 — 2026-10-18 — production contract (parent repo)
+
+- Default confirmed: `--use-ck-attention`.
+- `--use-sage-attention` = Kijai-patch fallback.
+- `--use-flash-attention` = experimental (H3 only).
 ## v0.2.1 — 2026-10-18
 
 **Status:** Released. Scope: bf16/fp16 weight models (Qwen-Image 2.1 etc.)
