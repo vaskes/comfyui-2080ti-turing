@@ -2,11 +2,15 @@
 
 ## TL;DR
 
-**SageAttention 1.0.6 is the universal attention backend for sm_75.**
-- Works correctly for ALL 6 (model, quant) combinations — including Qwen int8_convrot which broke flash v0.2.1 shim AND flash v0.3 real sm_75.
-- 1.5-2x slower than ck on most cells, but 2-5x faster than SDPA.
-- Install: `pip install sageattention==1.0.6` (Triton 3.x compatible on sm_75).
-- ComfyUI flag: `--use-sage-attention`.
+**ck is the production default; sage is the Kijai-patch fallback; flash is experimental.**
+
+- **ck (`--use-ck-attention`)** — production default. Fastest correct for ALL 6 (model, quant) cells. Uses Turing int8 tensor cores.
+- **sage 1.0.6 (`--use-sage-attention`)** — fallback for workflows that use the Kijai Sage Attn patch custom node. 1.5-2x slower than ck. Works correctly for ALL cells.
+- **flash v0.3 (`--use-flash-attention`)** — experimental. Real sm_75 Dao-AILab build, works for H3 all quants, **broken for Qwen int8_convrot** (precision trap even with fp32-accumulator mma). Use only for H3 experimental work.
+
+ck is the default because it's fastest correct across all cells.
+sage is the Kijai-patch fallback because that custom node requires
+sage's specific attention layout.
 
 ## Full matrix: 4 backends × 2 models × 4 quants
 
@@ -80,23 +84,27 @@ looks identical to ck/sdpa in our tests. The "not exact" label means:
 
 ## Recommended config for sm_75
 
-**Two-tier strategy:**
+**Default**: `--use-ck-attention` in compose.yaml. Fastest correct for all cells.
+- H3 bf16: 116s
+- H3 int8_convrot: 110s (fastest in entire matrix)
+- Qwen bf16: 140s
+- Qwen int8_convrot: 45s
 
-**Tier 1 (default)**: `--use-ck-attention` in compose.yaml
-- Fastest correct option for all 6 (model, quant) cells
-- Best for H3 int8_convrot (110s, fastest in entire matrix)
-
-**Tier 2 (fallback)**: `--use-sage-attention`
+**Fallback (Kijai sage attn patch workflows)**: `--use-sage-attention`
+- Required for workflows that use the Kijai Sage Attn patch custom node
 - Universal correct option (works for everything flash breaks)
 - 1.5-2x slower than ck on most cells
-- Useful when ck is unavailable, or for cross-backend testing
+- Install: `pip install sageattention==1.0.6` (Triton 3.x compatible on sm_75)
+
+**Experimental (H3 only)**: `--use-flash-attention`
+- Real sm_75 Dao-AILab build, v0.3 (patches in `patches/0001` and `patches/0002`)
+- Works for H3 all quants (~210s)
+- **Broken for Qwen int8_convrot** (precision trap)
+- Use only for H3 experimental work; ck is faster anyway
 
 **Avoid for these cells**:
-- `--use-flash-attention` v0.2.1 (shim) for ANY H3 quant
-- `--use-flash-attention` v0.3 (real sm_75) for Qwen int8_convrot
-
-**Default option**: keep `--use-ck-attention` as compose default.
-sage is now available via the same `--use-sage-attention` flag.
+- `--use-flash-attention` v0.2.1 (shim) for ANY H3 quant — 3.8MB garbage
+- `--use-flash-attention` v0.3 (real sm_75) for Qwen int8_convrot — garbage
 
 ## Sage install details
 

@@ -5,20 +5,29 @@ All notable changes to this fork. Versions are tagged as
 
 ## v1.0.0 — 2026-10-18 — production release
 
-**Attention backends**: 3 backends, sage as default, ck for speed, flash v0.3 experimental.
+**Attention backends**: 3 backends, **ck as default**, sage as Kijai-patch fallback, flash v0.3 experimental.
+
+### Production contract
+- **Default**: `--use-ck-attention` (fastest correct for every model on sm_75)
+- **Fallback**: `--use-sage-attention` (for workflows with Kijai Sage Attn patch node)
+- **Experimental**: `--use-flash-attention` (v0.3 real sm_75 build, H3 only)
 
 ### Added
-- **SageAttention 1.0.6** as production default (`--use-sage-attention` in compose.yaml).
+- **comfy_kitchen (ck)** as production default (`--use-ck-attention` in compose.yaml).
+  - Fastest correct for all (model, quant) combinations on sm_75.
+  - Uses Turing int8 tensor cores via CUTLASS composable kernel.
+- **SageAttention 1.0.6** as Kijai-patch fallback (`--use-sage-attention`).
   - INT8 Q/K + FP16 P/V quantization-aware attention via Triton.
-  - Works correctly for all tested (model, quant) combinations on sm_75.
+  - 1.5-2x slower than ck, but correct for any model.
+  - Required for workflows that use the Kijai Sage Attn patch custom node.
   - Auto-installs on container start via entrypoint script.
-- **comfy_kitchen (ck)** as fastest correct option (`--use-ck-attention`).
 - **FlashAttention v0.3** (real sm_75 Dao-AILab build with 2-line patch) as
-  experimental fallback (`--use-flash-attention`).
+  experimental (`--use-flash-attention`).
   - Patches preserved in `flash-attention-sm75/patches/0001-add-sm75-arch.patch`
     and `patches/0002-relax-arch-gates.patch` for reference.
+  - Works for H3, broken for Qwen int8_convrot (precision trap).
 - Entrypoint script (`comfyui-entrypoint.sh`) bind-mounted to
-  `/tmp/flash-attention-build` inside the container, idempotent sage install.
+  `/tmp/flash-attention-build` inside the container, idempotent sage + pytest install.
 - `tests/MATRIX.md` — full 18-cell matrix report (3 backends × 2 models × 4 quants).
 - `tests/TESTING.md` — test runner guide.
 - `tests/test_backends.py` — production smoke + import tests.
@@ -32,8 +41,8 @@ All notable changes to this fork. Versions are tagged as
 - H3 int8_convrot: sdpa 215s, ck 110s, flash_v0.2.1 GARBAGE 3.8MB, flash_v0.3 210s, sage 231s.
 - H3 w6a8: sdpa 456s, ck 356s, flash_v0.3 456s, sage 466s.
 
-**Recommendation**: sage as default (works for all), ck for speed
-when only ck-supported models are used.
+**Recommendation**: ck as default (fastest), sage for Kijai-patch
+workflows, flash only for H3 experimental work.
 
 ## v0.3.0 — 2026-10-18 (research, not release)
 

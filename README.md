@@ -11,40 +11,42 @@ provides working backends via three independent code paths.
 
 | Backend | ComfyUI flag | Status | Speed | Correctness |
 |---|---|---|---|---|
-| **SageAttention 1.0.6** ⭐ | `--use-sage-attention` | **DEFAULT** | medium (1.5-2x slower than ck) | all models ✅ |
-| comfy_kitchen (ck) | `--use-ck-attention` | production, fastest | **fastest correct** | all models ✅ |
+| **comfy_kitchen (ck)** ⭐ | `--use-ck-attention` | **DEFAULT** | **fastest correct** | all models ✅ |
+| SageAttention 1.0.6 | `--use-sage-attention` | fallback (Kijai sage attn patch) | medium (1.5-2x slower than ck) | all models ✅ |
 | FlashAttention v0.3 (real sm_75 build) | `--use-flash-attention` | experimental | medium-slow | H3 ✅, Qwen int8_convrot ❌ |
 
 ⭐ = compose.yaml default
 
-**Sage is the default** because 99% of Turing workflows use SageAttention
-nodes (incl. `kidja patch sage attn`) and Sage is the only backend that
-works correctly for **every** (model, quant) combination we tested on
-sm_75 — including Qwen-Image 2.1 with int8_convrot weights, which
-breaks both flash variants.
+**ck is the default** because it's the fastest correct backend on sm_75
+across all (model, quant) combinations. Use sage ONLY for workflows that
+contain the Kijai Sage Attn patch node (`sageattn` ComfyUI custom node
+that patches attention in specific ways ck doesn't support). Flash v0.3
+is experimental — only H3 works correctly; Qwen int8_convrot produces
+garbage (precision trap even with fp32-accumulator mma).
 
 Switch backends without editing files:
 ```bash
-# ck (fastest, for H3 bf16 etc.)
-COMFYUI_ARGS="--use-ck-attention" docker compose -f /opt/comfyui-git/compose.yaml up -d
+# ck (default, fastest)
+docker compose -f /opt/comfyui-git/compose.yaml up -d
 
-# flash v0.3 (experimental, only for H3)
-COMFYUI_ARGS="--use-flash-attention" docker compose -f /opt/comfyui-git/compose.yaml up -d
-
-# sage (default, works for everything)
+# sage (for Kijai sage attn patch workflows)
 COMFYUI_ARGS="--use-sage-attention" docker compose -f /opt/comfyui-git/compose.yaml up -d
+
+# flash v0.3 (experimental, H3 only)
+COMFYUI_ARGS="--use-flash-attention" docker compose -f /opt/comfyui-git/compose.yaml up -d
 ```
 
 ## Why three backends, not one
 
 `ck` is hand-tuned CUTLASS composable kernel that uses Turing's int8
-tensor cores directly. Fastest correct, but limited to operators
-that comfy_kitchen supports (covers H3 and Qwen T2I/T2V in our tests).
+tensor cores directly. **Fastest correct** for every (model, quant) we
+tested on sm_75. Covers H3 and Qwen T2I/T2V in our test matrix.
 
 `sage` 1.0.6 (Tsinghua, arXiv:2410.02367) is INT8-Q/K + FP16-P/V
 quantization-aware attention via Triton. 1.5-2x slower than ck, but
-correct for any model. Required for any workflow that uses
-SageAttention nodes from custom-node packages.
+correct for any model. **Required fallback for workflows that use the
+Kijai Sage Attn patch** custom node — ck doesn't have a path for that
+node's specific attention layout.
 
 `flash` v0.3 is the upstream Dao-AILab `flash-attention` 2.8.4
 patched for sm_75 (patches in `patches/0001-add-sm75-arch.patch` and
