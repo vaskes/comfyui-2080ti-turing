@@ -13,7 +13,7 @@ import subprocess
 import time
 from pathlib import Path
 
-REPO = Path("/opt/comfyui-git/flash-attention-sm75/tests/matrix")
+REPO = Path("/opt/comfyui-git/tests/matrix")
 QWEN_WF_SRC = "/opt/comfyui/image_qwen_image_2_1_t2i_api.json"
 H3_WF_SRC = "/opt/comfyui/video_minimax_h3_t2v_api.json"
 COMFY_URL = "http://127.0.0.1:8188"

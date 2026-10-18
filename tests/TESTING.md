@@ -6,7 +6,7 @@ Production test suite for the three attention backends on sm_75.
 
 ```bash
 # Inside the running container
-docker exec comfyui python3 -m pytest /opt/comfyui-git/flash-attention-sm75/tests/test_backends.py -v
+docker exec comfyui python3 -m pytest /opt/comfyui-git/tests/test_backends.py -v
 ```
 
 Expected: 4 tests pass, no warnings.
@@ -20,7 +20,7 @@ combinations × 3 backends = 18 cells).
 
 ```bash
 cd /opt/comfyui-git
-python3 flash-attention-sm75/tests/matrix/run_matrix.py
+python3 tests/matrix/run_matrix.py
 ```
 
 The script:
@@ -93,5 +93,5 @@ A broken output (precision trap):
 # .github/workflows/test.yml
 - name: Run smoke tests
   run: |
-    docker exec comfyui python3 -m pytest /opt/comfyui-git/flash-attention-sm75/tests/test_backends.py -v
+    docker exec comfyui python3 -m pytest /opt/comfyui-git/tests/test_backends.py -v
 ```

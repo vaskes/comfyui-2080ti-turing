@@ -5,7 +5,7 @@ These are unit/smoke tests. For full end-to-end on real models
 use tests/matrix/run_matrix.py (the 18-cell matrix).
 
 Run inside the ComfyUI container:
-    docker exec comfyui python3 -m pytest /opt/comfyui-git/flash-attention-sm75/tests/test_backends.py -v
+    docker exec comfyui python3 -m pytest /opt/comfyui-git/tests/test_backends.py -v
 
 Tests:
   1. test_sage_importable — sageattention module loads

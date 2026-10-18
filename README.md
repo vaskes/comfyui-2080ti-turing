@@ -82,28 +82,31 @@ comfyui-2080ti-turing/
 ├── NOTICE.md                  # third-party attributions
 ├── CREDITS.md                 # upstream project credits
 ├── Dockerfile                 # production image
-├── compose.yaml               # production compose (sage as default)
-├── flash-attention-sm75/      # v0.3 patches and tests
+├── compose.yaml               # production compose (ck as default)
+├── tests/                     # cross-backend test suite
+│   ├── MATRIX.md              # full 18-cell matrix report
+│   ├── TESTING.md             # how to run tests
+│   ├── test_backends.py       # smoke + import tests
+│   └── matrix/
+│       ├── run_matrix.py      # production matrix runner
+│       └── matrix_results.jsonl
+├── flash-attention-sm75/      # flash v0.3 (experimental, H3 only)
 │   ├── README.md              # flash v0.3 deep-dive + diagnostic
 │   ├── CHANGELOG.md
-│   ├── patches/
-│   │   ├── 0001-add-sm75-arch.patch     # setup.py: add sm_75 arch
-│   │   └── 0002-relax-arch-gates.patch  # relax runtime gates
-│   └── tests/
-│       ├── MATRIX.md          # full 18-cell matrix report
-│       ├── TESTING.md         # how to run tests
-│       ├── test_backends.py   # smoke + import tests
-│       ├── matrix/
-│       │   ├── run_matrix.py  # production matrix runner
-│       │   └── matrix_results.jsonl
-│       └── results/
-│           ├── matrix_2026-10-18/  # main matrix artefacts
-│           └── sage_2026-10-18/    # sage-specific artefacts
+│   └── patches/
+│       ├── 0001-add-sm75-arch.patch     # setup.py: add sm_75 arch
+│       └── 0002-relax-arch-gates.patch  # relax runtime gates
+└── sage-attention-sm75/       # SageAttention 1.0.6 (Kijai patch fallback)
+    └── README.md              # sage install + Kijai patch workflow
 ```
+
+> **No binary artefacts in this repo.** PNG/MP4 files from test runs are
+> not checked in — they only prove the model produced an image, not the
+> code. Re-run the matrix to regenerate them.
 
 ## Attention backend switching
 
-`compose.yaml` ships with `COMFYUI_ARGS: --use-sage-attention` as the
+`compose.yaml` ships with `COMFYUI_ARGS: --use-ck-attention` as the
 default. The value is passed to `python3 main.py` inside the container.
 
 **At container start:**
@@ -122,15 +125,15 @@ new flag. The flag persists for the container lifetime.
 
 ## Testing
 
-See [flash-attention-sm75/tests/TESTING.md](flash-attention-sm75/tests/TESTING.md)
+See [tests/TESTING.md](tests/TESTING.md)
 for the full test suite. The two key tests are:
 
 ```bash
 # Quick smoke (all 3 backends importable, flags valid)
-docker exec comfyui python3 -m pytest flash-attention-sm75/tests/test_backends.py -v
+docker exec comfyui python3 -m pytest tests/test_backends.py -v
 
 # Full 18-cell matrix (24 minutes, all backends × all model/quant)
-python3 flash-attention-sm75/tests/matrix/run_matrix.py
+python3 tests/matrix/run_matrix.py
 ```
 
 ## Hardware
