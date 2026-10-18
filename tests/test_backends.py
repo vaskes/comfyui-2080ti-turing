@@ -86,7 +86,8 @@ def test_comfyui_args_current():
         backend = "flash"
     else:
         backend = "sdpa (default fallback)"
-    assert  any("--use-ck-attention" in a for a in args), f"Default backend must be ck, got: {args}"; 
+    # A15: production contract — default must be ck (fastest correct for all)
+    assert backend == "ck", f"Default backend must be ck, got: {backend} (cmdline: {cmdline})"
     assert backend in ("sage", "ck", "flash", "sdpa (default fallback)"), \
         f"unknown backend: {cmdline}"
 
