@@ -209,19 +209,12 @@ flash is only loaded if `--use-flash-attention` is in `COMFYUI_ARGS`.
 
 ## Credits
 
-This project builds on the work of many upstream contributors:
+This work is a collaboration between:
 
-- **[ComfyUI](https://github.com/comfyanonymous/ComfyUI)** — base diffusion UI
-- **[ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager)** — node management
-- **[comfy_kitchen](https://github.com/ltdrdata/comfy_kitchen)** — Comfy Kitchen attention backend (ck), the production default
-- **[SageAttention](https://github.com/thu-ml/SageAttention)** (Tsinghua, [arXiv:2410.02367](https://arxiv.org/abs/2410.02367)) — INT8 quantization-aware attention, the Kijai-patch fallback
-- **[Dao-AILab flash-attention](https://github.com/Dao-AILab/flash-attention)** v0.3 — experimental sm_75 build (H3 only)
-- **ssiu flash-attn_turing** (referenced by upstream ComfyUI shim) — fp16-accumulator m8n8k8 attention
-- **CUTLASS** (NVIDIA) — composable kernels used by comfy_kitchen
-- **Triton** (OpenAI) — kernels used by SageAttention on sm_75
-- **Kijai** — Sage Attn patch custom node workflows
+- **Vaskes** — Vibecoder, hardware & infrastructure, project lead, integration QA.
+- **Mavis** — AI implementation agent, powered by [MiniMax M3](https://MiniMax.com).
 
-See [`CREDITS.md`](CREDITS.md) for detailed attributions.
+Full credits (people, organizations, and component attributions) are in [`CREDITS.md`](CREDITS.md).
 
 ## License
 
