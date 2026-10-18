@@ -15,6 +15,10 @@ services:
     environment:
       NVIDIA_VISIBLE_DEVICES: "0"
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # COMFYUI_ARGS is the variable expanded by the Dockerfile CMD.
+      # Override with COMFYUI_ARGS="--use-ck-attention" docker compose up -d
+      # to change attention backend without editing this file.
+      COMFYUI_ARGS: 
     ports:
       - "8188:8188"
     volumes:
@@ -25,6 +29,8 @@ services:
       - /opt/comfyui/user:/opt/ComfyUI/user
       - /opt/comfyui/workflows:/opt/ComfyUI/workflows
       - /opt/comfyui/custom_nodes:/opt/ComfyUI/custom_nodes
+      # v0.3 (real sm_75) flash_attn source + .so, bind-mounted to /tmp/flash-attention
+      - /opt/flash-sm75-build:/tmp/flash-attention-build
       - /opt/comfyui/logs:/var/log/comfyui
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8188/system_stats', timeout=5); sys.exit(0 if r.status==200 else 1)\""]
