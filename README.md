@@ -139,7 +139,7 @@ python3 tests/matrix/run_matrix.py
 ## Hardware
 
 - **GPU**: NVIDIA RTX 2080 Ti (sm_75, Turing) — EOL for upstream flash-attention 2.x
-- **VRAM**: 11 GB
+- **VRAM**: 22 GB
 - **Driver**: nvidia-driver-*-open (no nvidia-container-toolkit on host needed,
   runtime is `nvidia` in compose.yaml)
 - **Container**: `comfyui-workstation:cu130-torch-stable-gcc`
@@ -151,20 +151,34 @@ gradually grew:
 - v0.1: flash-attention v0.2.1 shim (bf16/fp16 only, broken for int8)
 - v0.2.1: full matrix + ck baseline + flash attempts
 - v0.3: real sm_75 flash build via 2-line patch (correct for H3, broken for Qwen int8)
-- **v1.0 (this release)**: sage 1.0.6 + ck + flash v0.3, sage as default
+- **v1.0 (this release)**: 3 attention backends — ck (default), sage (Kijai-patch fallback), flash v0.3 (experimental)
 
 Patches in `flash-attention-sm75/patches/` are the historical v0.3 work
 for the optional `--use-flash-attention` experimental path. They are
 NOT applied by default — the container ships with sage as default and
 flash is only loaded if `--use-flash-attention` is in `COMFYUI_ARGS`.
 
+## Credits
+
+This project builds on the work of many upstream contributors:
+
+- **[ComfyUI](https://github.com/comfyanonymous/ComfyUI)** — base diffusion UI
+- **[ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager)** — node management
+- **[comfy_kitchen](https://github.com/ltdrdata/comfy_kitchen)** — Comfy Kitchen attention backend (ck), the production default
+- **[SageAttention](https://github.com/thu-ml/SageAttention)** (Tsinghua, [arXiv:2410.02367](https://arxiv.org/abs/2410.02367)) — INT8 quantization-aware attention, the Kijai-patch fallback
+- **[Dao-AILab flash-attention](https://github.com/Dao-AILab/flash-attention)** v0.3 — experimental sm_75 build (H3 only)
+- **ssiu flash-attn_turing** (referenced by upstream ComfyUI shim) — fp16-accumulator m8n8k8 attention
+- **CUTLASS** (NVIDIA) — composable kernels used by comfy_kitchen
+- **Triton** (OpenAI) — kernels used by SageAttention on sm_75
+- **Kijai** — Sage Attn patch custom node workflows
+
+See [`CREDITS.md`](CREDITS.md) for detailed attributions.
+
 ## License
 
-BSD-3-Clause. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).
-Third-party attributions: comfyui, comfyui-manager, comfy_kitchen,
-SageAttention (Tsinghua), Dao-AILab flash-attention.
+MIT. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).
 
-## Contact
-
-`vaskes` on GitHub. Issues and PRs welcome for the sm_75 attention
-backends or the production compose setup.
+This work does not contain any know-how worth fencing off. Use,
+modify, and redistribute freely. The only attribution requirement
+is keeping the upstream credits intact (see [Credits](#credits)
+above and [CREDITS.md](CREDITS.md)).

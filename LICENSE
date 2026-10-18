@@ -1,145 +1,21 @@
-PROPRIETARY LICENSE — ALL RIGHTS RESERVED
-==========================================
+MIT License
 
-Copyright (c) 2026 Kuduza Ai Lab. All rights reserved.
-Project website: https://kuduza.com
-Repository: https://github.com/vaskes/comfyui-2080ti-turing
+Copyright (c) 2026 Kuduza Ai Lab
 
-This repository and the code, configuration, documentation, and any other
-materials contained herein (collectively, the "Work") constitute proprietary
-intellectual property of Kuduza Ai Lab ("Copyright Holder").
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-1. NO GRANT OF RIGHTS
----------------------
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-The Work is NOT open-source software. No rights are granted to any person or
-entity to use, copy, modify, merge, publish, distribute, sublicense, and/or
-sell copies of the Work, in whole or in part, without the prior express
-written permission of the Copyright Holder.
-
-Any use of the Work in violation of these terms is strictly prohibited and
-may constitute infringement of the Copyright Holder's intellectual property
-rights and/or a breach of contract.
-
-2. PERMITTED USE
-----------------
-
-The Work is provided for reference, evaluation, and internal testing only.
-Downloading, viewing, and reading the source files of the Work for personal
-non-commercial evaluation is permitted. Any other use requires prior written
-permission from the Copyright Holder.
-
-3. ATTRIBUTION
---------------
-
-Where the Copyright Holder grants permission to use the Work, the following
-attribution must be preserved in all copies, derivatives, and public
-references:
-
-  "Powered by Kuduza Ai Lab (https://kuduza.com).
-   Source: https://github.com/vaskes/comfyui-2080ti-turing"
-
-The attribution must be displayed in a reasonably prominent location (e.g.,
-README, About dialog, splash screen, footer) and must link to both the project
-website and the source repository.
-
-4. THIRD-PARTY OPEN-SOURCE COMPONENTS
---------------------------------------
-
-The Work incorporates or depends on third-party open-source components listed
-in `NOTICE.md`. Those components remain governed by their respective open-source
-licenses (GPL-3.0, BSD-3-Clause, MIT, Apache-2.0, etc., as documented in
-NOTICE.md).
-
-Any derivative work of this Work that is distributed in source or binary form
-MUST comply with the license terms of every open-source prerequisite or
-dependency used, including but not limited to:
-
-  - Preservation of copyright notices and license texts
-  - Provision of source code for GPL-licensed components (or a written offer
-    to provide such source)
-  - Inclusion of modifications, if any, with prominent notices
-
-The Copyright Holder's proprietary license applies to the Work as a whole and
-to its original components only. It does not restrict, alter, or revoke the
-open-source licenses of third-party components.
-
-5. DERIVATIVE WORKS
--------------------
-
-You may not create, distribute, or publish derivative works of the Work
-without the Copyright Holder's prior express written permission. Any
-unauthorized derivative work constitutes copyright infringement.
-
-If the Copyright Holder grants permission for a derivative work, the
-derivative work must:
-
-  a) Carry the attribution specified in Section 3 above;
-  b) Mark all modified files with prominent change notices;
-  c) Not use the names "Kuduza Ai Lab", "Kuduza", or the Copyright Holder's
-     trademarks, logos, or trade names to endorse or promote derivative works
-     without separate prior written permission;
-  d) Comply with all third-party open-source license terms per Section 4.
-
-6. NO WARRANTY
---------------
-
-THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. THE ENTIRE RISK AS TO
-THE QUALITY AND PERFORMANCE OF THE WORK IS WITH YOU. SHOULD THE WORK PROVE
-DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR, OR
-CORRECTION.
-
-7. LIMITATION OF LIABILITY
---------------------------
-
-IN NO EVENT SHALL THE COPYRIGHT HOLDER, ITS AFFILIATES, EMPLOYEES, AGENTS,
-OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
-WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF,
-OR IN CONNECTION WITH THE WORK OR THE USE OR OTHER DEALINGS IN THE WORK.
-
-8. TERMINATION
---------------
-
-Any permissions implicitly granted under Section 2 terminate automatically
-upon any breach of this License. Upon termination, you must immediately cease
-all use of the Work and destroy any copies in your possession or control.
-
-9. GOVERNING LAW
-----------------
-
-This License is governed by the laws of the jurisdiction in which the
-Copyright Holder is established, without regard to conflict-of-laws
-principles. Any disputes arising under this License shall be resolved in the
-competent courts of that jurisdiction.
-
-10. SEVERABILITY
-----------------
-
-If any provision of this License is held unenforceable, the remaining
-provisions shall continue in full force and effect.
-
-11. ENTIRE AGREEMENT
----------------------
-
-This License constitutes the entire agreement between you and the Copyright
-Holder with respect to the Work and supersedes all prior or contemporaneous
-agreements, representations, or understandings.
-
-12. NO WAIVER
--------------
-
-Failure by the Copyright Holder to enforce any provision of this License
-shall not constitute a waiver of future enforcement of that or any other
-provision.
-
-13. CONTACT
------------
-
-For permission requests, licensing inquiries, or commercial use, contact:
-  https://kuduza.com
-
-================================================================================
-END OF LICENSE
-================================================================================
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
