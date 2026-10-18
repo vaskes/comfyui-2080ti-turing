@@ -1,13 +1,62 @@
 # ComfyUI on RTX 2080 Ti (sm_75, Turing) — production fork
 
 This fork of [comfyui-2080ti-turing](https://github.com/vaskes/comfyui-2080ti-turing)
-ships **three attention backends** for the sm_75 (Turing) hardware, with
-**SageAttention 1.0.6 as the production default** and `comfy_kitchen` (ck)
-as the fastest correct alternative. The hardware is end-of-life for
-upstream `flash-attention` 2.x (no sm_75 mma support), so this fork
-provides working backends via three independent code paths.
+ships **three attention backends** for the sm_75 (Turing) hardware that upstream
+`flash-attention` 2.x no longer supports (EOL, no sm_75 mma). Production default
+is `comfy_kitchen` (ck) — fastest correct across all tested (model, quant)
+combinations. `SageAttention 1.0.6` is the fallback for workflows that use
+the Kijai Sage Attn patch custom node. `flash v0.3` is the experimental
+real sm_75 build (H3 only, broken for Qwen int8_convrot).
 
-## Production contract (2026-10-18)
+See the [full matrix below](#full-matrix-4-backends--2-models--4-quants-24-cells-validated-2026-10-18) for which backend is fastest correct vs broken per cell.
+
+## TL;DR — what this repo is for
+
+This repo restores **working attention backends on RTX 2080 Ti (sm_75, Turing)**.
+Upstream `flash-attention` 2.x is EOL for sm_75 hardware (no sm_75 mma support),
+so workflows running on RTX 2080 Ti either fail or silently fall back to slow
+pytorch SDPA. This repo provides three production attention backends
+(`ck`, `sage`, `flash` v0.3) that work on sm_75, with the matrix below showing
+exactly which backend is fastest correct vs broken for every tested combination.
+
+The hardware is EOL. The repo is MIT. Use it.
+
+## Full matrix: 4 backends × 2 models × 4 quants (24 cells, validated 2026-10-18)
+
+### Qwen-Image 2.1 (T2I, 25 steps)
+
+| Quant | SDPA | **ck ⭐ default** | flash v0.2.1 (shim) | flash v0.3 (real sm_75) | sage 1.0.6 |
+|---|---|---|---|---|---|
+| bf16 | 175.0s ✅ 2.34MB | **140.0s** ✅ 2.28MB | 141.72s ✅ 2.29MB | 176.0s ✅ 2.28MB | 175.3s ✅ 2.28MB |
+| int8_convrot | 70.2s ✅ 2.29MB | **45.1s** ✅ 2.30MB | 35.1s ❌ GARBAGE | 45.1s ❌ GARBAGE | 70.1s ✅ 2.29MB 🎉 |
+
+### Minimax H3 (T2V, 8-step turbo, 8 frames, heretic CLIP)
+
+| Quant | SDPA | **ck ⭐ default** | flash v0.2.1 (shim) | flash v0.3 (real sm_75) | sage 1.0.6 |
+|---|---|---|---|---|---|
+| bf16 | (broken env) | **116.0s** ✅ 538KB | 111.0s ❌ 3.8MB garbage | 211.0s ✅ 530KB | 591.0s ✅ 488KB |
+| fp8 | 582.3s ✅ 558KB | **476.2s** ✅ 560KB | 12.9KB ❌ broken | 576.7s ✅ 558KB | 585.9s ✅ 558KB |
+| int8_convrot | 215.4s ✅ 530KB | **110.3s** ✅ 538KB | 111.0s ❌ 3.8MB garbage | 210.3s ✅ 530KB | 231.3s ✅ 530KB |
+| w6a8 | 455.9s ✅ 492KB | **355.6s** ✅ 554KB | (not tested) | 455.6s ✅ 492KB | 465.7s ✅ 492KB |
+
+**Read this table row by row, left to right:**
+
+- ⭐ **ck wins everywhere** for correctness + speed. The production default.
+- 🎉 **sage wins where flash loses** — Qwen int8_convrot is the headline cell.
+  Both flash variants produce 3.8MB / 2.48MB checkerboard garbage; sage
+  produces the correct 2.29MB image in 70s. This is the reason `sage` is
+  the Kijai-patch fallback.
+- ❌ **flash v0.2.1 (shim)** is a precision trap. The community fork it routes
+  to uses m8n8k8 fp16-accumulator, which overflows for any int8/convrot
+  weight model. Use only for bf16/fp16 if you must.
+- ⚠️ **flash v0.3 (real sm_75)** is experimental. It works for H3 all quants
+  but is **broken for Qwen int8_convrot** (precision trap even with
+  fp32-accumulator mma). Don't use it for Qwen. Also 2x slower than ck.
+- **SDPA** always works but is the slowest path. Fallback-of-last-resort.
+
+## Production contract
+
+ (2026-10-18)
 
 | Backend | ComfyUI flag | Status | Speed | Correctness |
 |---|---|---|---|---|
