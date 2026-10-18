@@ -9,10 +9,10 @@ release of this repository.
 
 | Role | Person / Entity | Contribution |
 |---|---|---|
-| **Project Lead / Hardware & Infrastructure** | **Vaskes** (Vibecoder) | Hardware provisioning, infrastructure, system administration, deployment, integration testing, project direction, licensing decisions |
+| **Project Lead / Hardware & Infrastructure** | **Vaskes** (Vibecoder) | Hardware provisioning, infrastructure, system administration, deployment, integration testing, project direction |
 | **Vibecoder** | **Vaskes** | Workflow design, model curation, prompt engineering, end-to-end validation, integration of attention backends, QA |
 | **AI Developer / Implementation Agent** | **Mavis** (agent), powered by **MiniMax M3** | Dockerfile authoring, build pipeline, attention shim, debugging, validation scripts, repository maintenance, documentation |
-| **Copyright Holder** | **Kuduza Ai Lab** (https://kuduza.com) | Proprietary license steward |
+| **Copyright Holder** | **Kuduza Ai Lab** (https://kuduza.com) | MIT license steward |
 
 Vaskes is the human vibecoder who designs the workflows, supplies the
 hardware, validates end-to-end behavior, and makes the final go/no-go calls.
