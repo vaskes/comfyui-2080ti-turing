@@ -23,6 +23,7 @@ ATTN_BACKENDS = {
     "sdpa": "",
     "ck":   "--use-ck-attention",
     "flash": "--use-flash-attention",
+    "sage": "--use-sage-attention",
 }
 
 QWEN_MODELS = {
