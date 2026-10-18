@@ -1,135 +1,86 @@
-# FlashAttention sm_75 (Turing) — EOL support restoration
+# flash-attention-sm75
 
-Restores `--use-flash-attention` support for NVIDIA Turing (sm_75) GPUs
-(RTX 2080 Ti, RTX 2080, RTX 2070, RTX 2060, Tesla T4, Quadro RTX) in
-**current ComfyUI** (`comfyui-2080ti-turing` repo).
+Experimental sm_75 build of upstream Dao-AILab `flash-attention` 2.8.4.
+**Status**: works for H3, broken for Qwen int8_convrot. Use
+[SageAttention 1.0.6](../README.md#production-contract-2026-10-18)
+as the production default.
 
-## What this is
-
-The official [`Dao-AILab/flash-attention`](https://github.com/Dao-AILab/flash-attention)
-repository dropped sm_75 support in current releases — not because
-sm_75 is broken, but because NVIDIA marked Turing as EOL and the
-maintainer (Tri Dao) decided not to keep the sm_75 path tested.
-
-This directory contains a **minimal patch** that re-enables sm_75 in
-the build matrix. The patch is 5 lines in `setup.py`:
-
-```python
-# sm_75 (Turing) - EOL hardware, but kernel code in csrc/flash_attn/src/
-# already supports it via CUTLASS SM75_16x8x8_F32F16F16F32_TN (m16n8k8 fp16->fp32)
-if "75" in archs:
-    cc_flag += ["-gencode", "arch=compute_75,code=sm_75"]
-    supported_archs.append("75")
-```
-
-**The kernel code itself is already sm_75-aware.** The
-`csrc/flash_attn/src/kernel_traits.h` file at the official repo
-includes:
-
-```cpp
-#else
-    using MMA_Atom_Arch = MMA_Atom<SM75_16x8x8_F32F16F16F32_TN>;
-#endif
-
-#if defined(__CUDA_ARCH__) &&  __CUDA_ARCH__ >= 750
-    using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, elem_type>;
-    using SmemCopyAtomTransposed = Copy_Atom<SM75_U16x8_LDSM_T, elem_type>;
-```
-
-This means sm_75 is supported via the **m16n8k8 fp16 → fp32** mma
-instruction, which has **fp32 accumulator** — the right design for
-EOL hardware.
-
-All that was missing was the arch list entry in `setup.py`. The
-patch here adds it back.
-
-## Quick start
+## When to use
 
 ```bash
-# Inside the comfyui container:
-cd /tmp
-git clone https://github.com/Dao-AILab/flash-attention.git
-cd flash-attention
-git checkout 965c921   # the commit this patch was generated against
-patch -p1 < /opt/comfyui-git/flash-attention-sm75/patches/0001-add-sm75-arch.patch
-FLASH_ATTN_CUDA_ARCHS="75;80;90;100;120" FLASH_ATTENTION_FORCE_BUILD=TRUE \
-    /opt/venv/bin/pip install --no-build-isolation --no-deps -e .
-# Now test:
-python3 -c "from flash_attn import flash_attn_func; print('OK')"
+# Only if you specifically need flash attention for H3
+COMFYUI_ARGS="--use-flash-attention" docker compose -f /opt/comfyui-git/compose.yaml up -d
 ```
 
-In ComfyUI, `--use-flash-attention` should now work on sm_75 with
-correct output.
+For H3 fp8/int8_convrot/w6a8, the v0.3 build is correct and
+~2x faster than sage. For Qwen bf16, the v0.3 build is correct
+but slow. **For Qwen int8_convrot, v0.3 produces garbage — use
+`--use-ck-attention` instead.**
 
-## File layout
+## Patches
 
+`patches/0001-add-sm75-arch.patch` — adds sm_75 to the CUDA arch
+list in setup.py. 5 lines.
+
+`patches/0002-relax-arch-gates.patch` — relaxes the runtime gates
+that check `cc_major >= 8` and `__CUDA_ARCH__ >= 800`. Without
+this patch, the sm_75 build loads but the kernels print "FATAL:
+requires sm80-sm90" and return uninitialized memory. 2-line + 5-line
+fix in `flash_api.cpp`.
+
+## Why v0.3 is slow on sm_75
+
+Turing's mma atom is `SM75_16x8x8_F32F16F16F32_TN` (k=8 per warp).
+Ampere/Ada/Hopper use `SM80_16x8x16_F32F16F16F32_TN` (k=16). The
+k-dim is half, so the sm_75 atom does 2x more mma instructions to
+process the same data. This is intrinsic to the hardware, not a
+patch limitation.
+
+Hand-tuning the sm_75 path (smaller block sizes, different smem
+layout, fused dequant) is possible but is multi-day kernel work.
+The ssiu community fork does this with m8n8k8 + fp16-accumulator
+but loses precision for any int8/convrot weight model — the same
+problem this fork is trying to solve.
+
+## Build (for reference only)
+
+The `.so` artifact is preserved in `/opt/flash-sm75-build/` on the
+workstation, bind-mounted to `/tmp/flash-attention-build/` inside the
+container. To rebuild from scratch:
+
+```bash
+cd /opt/flash-sm75-build
+git apply patches/0001-add-sm75-arch.patch
+git apply patches/0002-relax-arch-gates.patch
+FLASH_ATTN_CUDA_ARCHS=75 \
+  FLASH_ATTENTION_FORCE_BUILD=TRUE \
+  CPATH=$NVIDIA_CU13_INCLUDE \
+  LIBRARY_PATH=$NVIDIA_CU13_LIB \
+  pip install --no-build-isolation --no-deps -e .
 ```
-flash-attention-sm75/
-├── README.md                              # this file
-├── patches/
-│   └── 0001-add-sm75-arch.patch           # the 5-line setup.py patch
-├── scripts/
-│   └── apply-patch-and-install.sh         # convenience installer
-├── tests/
-│   ├── test_sm75_correctness.py           # unit tests vs SDPA reference (5/5 pass, max_diff < 0.0001)
-│   ├── RESULTS.md                         # unit test output
-│   ├── SPEED.md                           # Qwen e2e speed comparison
-│   └── results/
-│       └── qwen_flash_142s.png            # canonical e2e output
-├── docs/
-│   ├── strategy-decision.md               # why Strategy B over A
-│   ├── upstream-analysis.md               # how the sm_75 support is wired
-│   └── tickets/
-│       ├── M0-strategy-selection.md       # closed, Strategy B chosen
-│       ├── M1-build-infra.md              # this is what M1 is
-│       ├── M2-kernel-correctness.md
-│       ├── M3-comfyui-integration.md
-│       ├── M4-e2e-qwen-h3.md
-│       ├── M5-speed-validation.md
-│       └── M6-docs-cleanup.md
-├── LICENSE                                # BSD-3-Clause (inherited)
-└── CREDITS.md                             # Dao-AILab, Tri Dao, etc.
-```
 
-## Validation status
+Build time: ~2h 14min for 96 .cu files. Output: 400 MB `.so` in
+`flash_attn/` subdir.
 
-| Milestone | Status |
-|---|---|
-| M0: Strategy selection | ✅ done (Strategy B chosen) |
-| M1: Build infra | ✅ done (5-line patch + CUTLASS vendoring) |
-| M2: Kernel correctness | ✅ done (5/5 unit tests, max_diff < 0.0001) |
-| M3: ComfyUI integration | ✅ done (`--use-flash-attention` flag active) |
-| M4: E2E Qwen | ✅ done (141.72 s, recognizable 2.29 MB image) |
-| M4: E2E H3 | ⚠️ done with caveat — H3 needs `--use-ck-attention` (see Limitations) |
-| M5: Speed validation | ✅ done (5.07 vs 5.6 s/it = −9.5% per step) |
-| M6: Docs + cleanup | ✅ done (this README, VERSION_PINS, REVIEW_NOTES) |
+## Diagnostic history
 
-## Limitations
+Earlier v0.2.1 attempts:
+- The ComfyUI image ships a shim package at
+  `site-packages/flash_attn/__init__.py` that routes to
+  `flash_attn_turing` (ssiu community fork, m8n8k8 fp16-acc).
+- The shim shadows any editable install of the real sm_75 build.
+- The shim works for bf16/fp16 (Qwen) but is a precision trap for
+  int8/convrot weight models (H3).
 
-This work only enables the **bf16/fp16 weight** code path in
-flash-attention. The CUTLASS `SM75_16x8x8_F32F16F16F32_TN`
-m16n8k8 mma with fp32 accumulator is fp16-input only. Models
-that use **int8 convrot weights** (Minimax H3, the qwen3vl_32b
-text encoder for H3, etc.) must use `--use-ck-attention`
-instead — the sm_75 flash path produces checkerboard garbage
-on int8 convrot inputs.
+v0.3 bypasses the shim by:
+1. Renaming `site-packages/flash_attn/` to `flash_attn_shim_backup/`
+2. Adding a `.pth` file pointing to `/tmp/flash-attention-build`
+3. The `.so` is bind-mounted from the host
 
-For heterogeneous hosts (where some models are bf16/fp16 and
-others are int8 convrot), use per-workflow dispatch. ComfyUI's
-argparser does not allow setting both `--use-flash-attention`
-and `--use-ck-attention` at the same time, so the dispatcher
-needs to be either (a) per-invocation via the API (set
-`COMFYUI_ARGS` based on the workflow's model list), or (b) a
-patch to ComfyUI to allow per-node attention selection. Both
-are TODO items.
+This is done automatically by the matrix runner's `setup_v0_3_in_container()`
+helper on every container restart.
 
-See `tests/H3_RESULTS.md` for the full H3 e2e test report
-(baseline vs flash, frame samples, root cause analysis).
+## Test results
 
-## What was tested
-
-
-## References
-
-- **Upstream:** [`Dao-AILab/flash-attention`](https://github.com/Dao-AILab/flash-attention) — BSD-3-Clause, © 2023 Tri Dao.
-- **Task document:** [`docs/tasks/01-flash-sm75-native.md`](../tasks/01-flash-sm75-native.md) — the original task with full context.
+See [../tests/MATRIX.md](../tests/MATRIX.md) for the full 18-cell
+comparison (sage vs ck vs flash for every model/quant combination).
