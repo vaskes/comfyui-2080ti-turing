@@ -222,45 +222,106 @@ mirror) for the CUTLASS step.
 5. TODO-7 (sage per-row) is a separate task with its own
    schedule. Defer indefinitely until vaskes says to do it.
 
-### TODO-9: H3 int8 convrot path on sm_75 (NEW 2026-10-18, post-release)
+### TODO-9: sm_75 mma kernel port (BLOCKING v0.3, NEW 2026-10-18)
 
-**What:** H3 (Minimax video model) uses int8 convrot weights. The
-sm_75 flash patch we shipped only handles fp16-input attention
-(via `SM75_16x8x8_F32F16F16F32_TN`). When H3 is run with
-`--use-flash-attention`, the output is checkerboard garbage
-(111 s run, 3.8 MB of noise vs 116 s run, 538 KB of correct
-video with ck-attention). Investigation needed.
+**What**: write sm_75-specific `.cu` files using
+`SM75_16x8x8_F32F16F16F32_TN` (m16n8k8 fp32-accumulator, fp16-input)
+CUTLASS atom, plus dispatch logic to select these paths on
+`cc_major == 7 && cc_minor == 5`. Also bypass the shim that shadows
+our sm_75 build at runtime.
 
-**Options to consider:**
+**Why**: v0.2.1 ships with the limitation that
+`--use-flash-attention` works only for bf16/fp16 weight models
+(Qwen-Image 2.1 etc.). For H3 and any other int8 convrot model,
+the runtime routes through `flash_attn_turing` (ssiu community fork
+with m8n8k8 fp16-accumulator) which is precision-insufficient. The
+v0.2.1 patch in `Dao-AILab/flash-attention:setup.py` enables the sm_75
+build but the shim shadows it. See `docs/H3_DIAGNOSTIC.md` for the
+full analysis.
 
-1. **Add an int8-input CUTLASS kernel for sm_75.** The m16n8k8
-   mma with int8 input would need fp32 accumulator (still
-   sm_75-supported). But sm_75 has no dedicated INT8 tensor
-   cores, so the kernel would be very slow. Probably not worth
-   the engineering cost.
+**Three sub-tasks**, in dependency order:
 
-2. **Dequantize convrot to fp16 in a wrapper** before the
-   attention call. Adds compute cost (dequant + extra memory
-   traffic) and breaks the "no host-side dequant" assumption of
-   the convrot path. May or may not be faster than
-   `--use-ck-attention`'s int8 mma.
+#### TODO-9.1 — Bypass the shim (4-8h)
 
-3. **Per-workflow dispatcher in ComfyUI.** Patch ComfyUI to
-   select attention backend per model. Qwen-Image 2.1 gets
-   flash; H3 gets ck. Requires a ComfyUI code change (not just
-   a flag).
+The current shim at
+`/opt/venv/lib/python3.12/site-packages/flash_attn/__init__.py`
+routes to `flash_attn_turing`. To make our sm_75 build actually run:
 
-4. **Live with the limitation.** Document that sm_75 flash is
-   bf16/fp16 only. H3 users use ck-attention. This is what v0.2
-   does.
+- **Option A (preferred):** patch the ComfyUI image's Dockerfile to
+  not install the shim when a real `flash_attn` package is present.
+  The shim's own docstring says "If the real flash_attn package is
+  installed, this shim is shadowed" — but site-packages is searched
+  BEFORE the editable install path, so this assumption is wrong.
+  The fix is either to remove the shim, or to make it auto-detect
+  the real package and defer to it.
+- **Option B (workaround):** keep the shim, but make our sm_75 build
+  shadow it via a `.pth` file in site-packages (adds
+  `/tmp/flash-attention` to sys.path BEFORE site-packages).
+- **Option C (workaround):** override the shim in compose.yaml via
+  bind mount (already tested; works for our build but is fragile).
 
-**Status:** option 4 chosen for v0.2. Options 1-3 deferred
-indefinitely; can be picked up if a strong use case appears.
+TODO-9.1 deliverable: a stable install path where
+`import flash_attn` resolves to the Dao-AILab sm_75 build on sm_75
+hosts and to the standard wheel on sm_80+ hosts.
 
-**Pass criteria:** pick one of the 4 options and implement it.
-For option 4 (chosen), document the limitation in README
-(✅ done) and pass the H3 e2e test with the chosen backend
-(✅ done with ck-attention, 116 s, 538 KB).
+#### TODO-9.2 — sm_75 fp16-input kernel files (1-2 days)
+
+Add new `.cu` source files alongside the existing
+`flash_fwd_hdim*_sm80.cu` family:
+
+- `flash_fwd_hdim32_fp16_sm75.cu`
+- `flash_fwd_hdim64_fp16_sm75.cu`
+- `flash_fwd_hdim128_fp16_sm75.cu`
+- `flash_fwd_hdim128_fp16_causal_sm75.cu`
+- (similar for bf16, and for bwd if needed)
+
+Each file instantiates `run_mha_fwd_hdimN<half_t, false>` (and
+causal) using the sm_75 mma atom via the existing `kernel_traits.h`
+template specialization. The CUTLASS `SM75_16x8x8_F32F16F16F32_TN`
+atom is already in `kernel_traits.h` from upstream; we just need to
+instantiate it with the same templates that the sm_80 files use.
+
+The pattern: copy `flash_fwd_hdim128_fp16_sm80.cu` → rename to
+`flash_fwd_hdim128_fp16_sm75.cu`, change the `__CUDA_ARCH__` guard
+in `flash_fwd_launch_template.h` to `>= 750`, and verify the build.
+
+**Pass criteria:**
+- `python3 -c "from flash_attn import flash_attn_func; ..."` works on
+  sm_75 with no FATAL messages in stderr
+- 6/6 unit tests pass with the new build
+- E2E Qwen-Image 2.1 produces correct output (compared to v0.2.1
+  baseline)
+- Speed is within 5% of v0.2.1 (the sm_75 mma throughput is the
+  same, just different atom)
+
+#### TODO-9.3 — sm_75 int8 convrot input (2-4 days, optional)
+
+H3 uses int8 convrot weights. The flash kernel needs to accept
+values that are out-of-range for fp16 (e.g. dequantized rotated
+weights can have magnitude 5-10x normal fp16). Two options:
+
+- **Option A:** add a CUTLASS `SM75_16x8x8_INT8INT8INT32_TN`
+  instantiation. Sm_75 has no dedicated INT8 tensor cores, so
+  throughput will be 1/4 of fp16 path. Probably not worth it.
+- **Option B:** dequantize convrot to fp16 in a wrapper before the
+  attention call (in `comfy_kitchen` or a custom node). This
+  preserves flash kernel design but adds compute overhead. May
+  not be faster than ck-attention for H3.
+
+**Recommendation:** defer TODO-9.3 indefinitely. Document H3 as
+"requires ck-attention, not flash-attention" in README. If H3
+becomes a critical use case, revisit with a dedicated kernel port.
+
+**Effort estimate:**
+- TODO-9.1: 4-8h
+- TODO-9.2: 1-2 days
+- TODO-9.3: 2-4 days (deferred)
+
+**Total for v0.3:** ~1-2 working days of focused kernel work
+(TODO-9.1 + TODO-9.2). Test + cleanup ~half a day.
+
+**Status:** ⏳ pending vaskes approval. Plan written 2026-10-18
+(see `docs/tasks/03-sm75-mma-kernel-port.md` when port starts).
 
 ## When to declare the task fully done
 
