@@ -76,8 +76,14 @@ RUN git clone --depth 1 --branch ${COMFY_MANAGER_REF} https://github.com/ltdrdat
     pip install -r ComfyUI-Manager/requirements.txt
 
 # --- Triton (нужен для современных attention kernels, не оптимизация, а зависимость) ---
-# Ставим triton pin к версии, совместимой с pytorch. Берем просто stable.
 RUN pip install triton
+
+# --- SageAttention 1.0.6 + pytest (baked into the image) ---
+# SageAttention 1.0.6 is the Kijai-patch fallback backend. Pre-installing
+# avoids the first-run entrypoint install on every container recreate.
+# pytest is needed for in-container test runs (test_backends.py).
+# Entrypoint still does an idempotent `import` check for safety.
+RUN pip install sageattention==1.0.6 pytest
 
 # --- runtime defaults ---
 ENV NVIDIA_VISIBLE_DEVICES=0 \
@@ -94,10 +100,12 @@ RUN chmod +x /usr/local/bin/comfyui-entrypoint.sh
 
 WORKDIR /opt/ComfyUI
 
-# Healthcheck через /system_stats (ComfyUI API). Не требует модели.
+# ComfyUI listens on 8188 by default
+EXPOSE 8188
+
+# Healthcheck via /system_stats (ComfyUI HTTP API)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
-    CMD python3 -c "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8188/system_stats', timeout=5); sys.exit(0 if r.status==200 else 1)" \
-    || exit 1
+    CMD curl -fsS -m 5 http://127.0.0.1:8188/system_stats || exit 1
 
 # ENTRYPOINT is the baked script. It auto-installs sage if missing, then
 # execs python3 main.py with $COMFYUI_ARGS (default flags from env, or

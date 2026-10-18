@@ -26,8 +26,10 @@ All notable changes to this fork. Versions are tagged as
   - Patches preserved in `flash-attention-sm75/patches/0001-add-sm75-arch.patch`
     and `patches/0002-relax-arch-gates.patch` for reference.
   - Works for H3, broken for Qwen int8_convrot (precision trap).
-- Entrypoint script (`comfyui-entrypoint.sh`) bind-mounted to
-  `/tmp/flash-attention-build` inside the container, idempotent sage + pytest install.
+- Entrypoint script (`comfyui-entrypoint.sh`) baked into the image at
+  `/usr/local/bin/comfyui-entrypoint.sh` (Dockerfile ENTRYPOINT).
+  SageAttention 1.0.6 + pytest are pre-installed in the image layer; the
+  entrypoint does an idempotent `import` check for safety.
 - `tests/MATRIX.md` — full 18-cell matrix report (3 backends × 2 models × 4 quants).
 - `tests/TESTING.md` — test runner guide.
 - `tests/test_backends.py` — production smoke + import tests.

@@ -49,5 +49,7 @@ git checkout 965c921   # commit this patch was generated against
 ```
 
 The patch is applied by the matrix runner via `docker exec` against
-the bind-mounted `/tmp/flash-attention-build` source directory —
-no separate install script is needed.
+the bind-mounted `/tmp/flash-attention-build` source directory (the
+.so is bind-mounted; the entrypoint is baked into the image at
+`/usr/local/bin/comfyui-entrypoint.sh`). No separate install script
+is needed.
