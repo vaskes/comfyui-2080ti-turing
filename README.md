@@ -21,7 +21,11 @@ exactly which backend is fastest correct vs broken for every tested combination.
 
 The hardware is EOL. The repo is MIT. Use it.
 
-## Full matrix: 3 backends × 2 models × 4 quants (24 cells, validated 2026-10-18)
+## Full matrix: 3 backends × 2 models (6 model×quant combinations) = 18 cells, validated 2026-10-18
+
+Qwen has 2 quantizations (bf16, int8_convrot) and H3 has 4 (bf16, fp8, int8_convrot, w6a8),
+so the total is 3 × (2+4) = 18 cells — not 24. SDPA is shown as a reference baseline
+but is not a production backend (3 backends are the production contract).
 
 ### Qwen-Image 2.1 (T2I, 25 steps)
 

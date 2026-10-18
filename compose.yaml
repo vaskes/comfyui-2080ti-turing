@@ -5,9 +5,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Build args: use Dockerfile defaults (pinned commits) unless overridden.
+      # Override at build time: COMFYUI_REF=abcdef docker compose build
       args:
-        COMFYUI_REF: master
-        COMFY_MANAGER_REF: main
+        COMFYUI_REF: ${COMFYUI_REF:-5cc4b87}
+        COMFY_MANAGER_REF: ${COMFY_MANAGER_REF:-main}
     image: comfyui-workstation:cu130-torch-stable-gcc
     container_name: comfyui
     restart: unless-stopped
@@ -21,16 +23,14 @@ services:
     environment:
       NVIDIA_VISIBLE_DEVICES: "0"
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
-      # COMFYUI_ARGS is the variable expanded by the Dockerfile CMD.
-      # Override with COMFYUI_ARGS="--use-ck-attention" docker compose up -d
-      # to change attention backend without editing this file.
-      # Default: --use-ck-attention (fastest correct, works for all models).
-      # Override at start time: COMFYUI_ARGS="--use-sage-attention" docker compose up -d
-      #   --use-sage-attention   fallback for workflows that use Sage Attn patch
-      #                            nodes by Kijai (int8 quant + kijai patch node)
-      #   --use-flash-attention  experimental v0.3 (H3 only, broken for Qwen int8_convrot)
+      # COMFYUI_ARGS is the default attention backend flag set in the Dockerfile.
+      # Override at start time (env interpolation uses shell-style default):
+      #   COMFYUI_ARGS="--use-sage-attention" docker compose up -d
+      #   --use-ck-attention     fastest correct, default (works for all models)
+      #   --use-sage-attention   Kijai-patch fallback (for Sage Attn patch nodes)
+      #   --use-flash-attention  experimental v0.3 (H3 only)
       # The matrix runner always sets COMFYUI_ARGS explicitly.
-      COMFYUI_ARGS: --use-ck-attention
+      COMFYUI_ARGS: ${COMFYUI_ARGS:---use-ck-attention}
     ports:
       - "8188:8188"
     volumes:
@@ -47,7 +47,7 @@ services:
       - /opt/comfyui-git:/opt/comfyui-git:ro
       - /opt/comfyui/logs:/var/log/comfyui
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8188/system_stats', timeout=5); sys.exit(0 if r.status==200 else 1)\""]
+      test: ["CMD", "curl", "-fsS", "-m", "5", "http://127.0.0.1:8188/system_stats"]
       interval: 30s
       timeout: 10s
       retries: 5

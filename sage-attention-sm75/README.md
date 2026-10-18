@@ -35,12 +35,13 @@ For everything else, `ck` is the production default because:
 
 ## Install
 
-SageAttention is **auto-installed by the container entrypoint** at
-`/opt/flash-sm75-build/comfyui-entrypoint.sh` (bind-mounted to
-`/tmp/flash-attention-build/` inside the container). The entrypoint
-checks `import sageattention` and installs `sageattention==1.0.6` if
-missing. The marker file lives in the bind-mount, so the install
-persists across container recreates.
+SageAttention 1.0.6 is **pre-installed in the image** (added by
+the Dockerfile). The container entrypoint at
+`/usr/local/bin/comfyui-entrypoint.sh` (baked into the image via
+Dockerfile ENTRYPOINT) does an idempotent `import sageattention`
+check on startup as a safety net. No marker file is used — the
+install survives container recreates because it lives in the image
+layer.
 
 To install manually:
 ```bash

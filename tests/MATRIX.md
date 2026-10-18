@@ -128,8 +128,8 @@ is not required for the current sage 1.0.6 wheel.
 
 **Persistent install**: We added an entrypoint script
 (`/opt/flash-sm75-build/comfyui-entrypoint.sh` on host,
-bind-mounted to `/tmp/flash-attention-build/` in container) that
-auto-installs sage on first use. Marker file in the bind-mount
+baked into the image at `/usr/local/bin/comfyui-entrypoint.sh`) that
+auto-installs sage on first use. The `pip install` is now in the
 persists across container recreates.
 
 ## Source data
