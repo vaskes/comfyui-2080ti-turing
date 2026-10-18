@@ -1,4 +1,4 @@
-# SageAttention 1.0.6 vs ck vs flash: sm_75 attention backends (2026-10-18)
+# Attention backend matrix: Qwen-Image 2.1 + H3 across sage / ck / flash
 
 ## TL;DR
 

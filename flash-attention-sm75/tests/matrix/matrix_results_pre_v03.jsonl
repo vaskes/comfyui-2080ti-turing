@@ -1,7 +1,0 @@
-{"name": "qwen_int8_convrot_ck", "success": true, "time_s": 45.1, "err": "======", "output": "/opt/comfyui/output/qwen_qwen_int8_convrot_ck_00001.png", "output_size": 2299875}
-{"name": "h3_fp8_sdpa", "success": true, "time_s": 582.3, "err": "======", "output": "/opt/comfyui/output/h3_h3_fp8_sdpa_00001_.mp4", "output_size": 558462}
-{"name": "h3_fp8_ck", "success": true, "time_s": 476.2, "err": "======", "output": "/opt/comfyui/output/h3_h3_fp8_ck_00001_.mp4", "output_size": 560704}
-{"name": "h3_int8_convrot_sdpa", "success": true, "time_s": 215.4, "err": "======", "output": "/opt/comfyui/output/h3_h3_int8_convrot_sdpa_00001_.mp4", "output_size": 529792}
-{"name": "h3_int8_convrot_ck", "success": true, "time_s": 110.3, "err": "======", "output": "/opt/comfyui/output/h3_h3_int8_convrot_ck_00001_.mp4", "output_size": 538365}
-{"name": "h3_w6a8_sdpa", "success": true, "time_s": 455.9, "err": "======", "output": "/opt/comfyui/output/h3_h3_w6a8_sdpa_00001_.mp4", "output_size": 492246}
-{"name": "h3_w6a8_ck", "success": true, "time_s": 355.6, "err": "======", "output": "/opt/comfyui/output/h3_h3_w6a8_ck_00001_.mp4", "output_size": 554491}

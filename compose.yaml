@@ -15,6 +15,10 @@ services:
     # Use our entrypoint that auto-installs SageAttention 1.0.6 on first use.
     # Script lives in bind-mounted /opt/flash-sm75-build (host) -> /tmp/flash-attention-build (container).
     # Marker file in same bind-mount persists across container recreates.
+    # Entrypoint: auto-installs sage if missing, then exec ComfyUI with COMFYUI_ARGS.
+    # Default attention backend is sage (set in COMFYUI_ARGS below).
+    # Override via env: COMFYUI_ARGS=--use-ck-attention docker compose up -d
+    # See flash-attention-sm75/README.md for backend selection guide.
     entrypoint: [/tmp/flash-attention-build/comfyui-entrypoint.sh]
     environment:
       NVIDIA_VISIBLE_DEVICES: "0"
@@ -22,7 +26,12 @@ services:
       # COMFYUI_ARGS is the variable expanded by the Dockerfile CMD.
       # Override with COMFYUI_ARGS="--use-ck-attention" docker compose up -d
       # to change attention backend without editing this file.
-      COMFYUI_ARGS: 
+      # Default is empty; run with COMFYUI_ARGS env var to set the backend.
+      #   COMFYUI_ARGS="--use-sage-attention" docker compose up -d (default in our setup)
+      #   COMFYUI_ARGS="--use-ck-attention"   docker compose up -d (fastest correct)
+      #   COMFYUI_ARGS="--use-flash-attention" docker compose up -d (experimental v0.3)
+      # The matrix runner always sets COMFYUI_ARGS explicitly.
+      COMFYUI_ARGS:
     ports:
       - "8188:8188"
     volumes:
@@ -35,6 +44,8 @@ services:
       - /opt/comfyui/custom_nodes:/opt/ComfyUI/custom_nodes
       # v0.3 (real sm_75) flash_attn source + .so, bind-mounted to /tmp/flash-attention
       - /opt/flash-sm75-build:/tmp/flash-attention-build
+      # Source repo (read-only) — for running tests inside the container
+      - /opt/comfyui-git:/opt/comfyui-git:ro
       - /opt/comfyui/logs:/var/log/comfyui
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8188/system_stats', timeout=5); sys.exit(0 if r.status==200 else 1)\""]
