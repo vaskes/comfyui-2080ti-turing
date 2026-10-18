@@ -2,7 +2,7 @@
 
 ## This work
 
-- **Vaskes** — Vibecoder, hardware & infrastructure, project lead, integration QA. Maintainer of `vaskes/comfyui-2080ti-turing` (proprietary).
+- **Vaskes** — Vibecoder, hardware & infrastructure, project lead, integration QA. Maintainer of `vaskes/comfyui-2080ti-turing` (MIT).
 - **Mavis** — AI implementation agent, powered by MiniMax M3. Wrote the sm_75 build-matrix patch and the integration tooling.
 
 ## Upstream: Dao-AILab/flash-attention
@@ -39,7 +39,7 @@ code is upstream and governed by the BSD 3-Clause License (see
 - **CUDA Toolkit + cuDNN** — © NVIDIA. https://developer.nvidia.com/cuda-toolkit
 - **CUTLASS** — © NVIDIA. BSD-3-Clause. https://github.com/NVIDIA/cutlass
 
-## Test models and workflows (proprietary to vaskes)
+## Test models and workflows (vaskes hardware testbed)
 
 The end-to-end tests in `tests/test_sm75_e2e.py` exercise this patch
 on the following real models and workflows on the workstation:
