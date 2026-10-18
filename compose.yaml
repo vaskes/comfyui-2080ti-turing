@@ -16,7 +16,6 @@ services:
     # Script lives in bind-mounted /opt/flash-sm75-build (host) -> /tmp/flash-attention-build (container).
     # Marker file in same bind-mount persists across container recreates.
     entrypoint: [/tmp/flash-attention-build/comfyui-entrypoint.sh]
-    command: ["sh", "-c", "exec python3 main.py ${COMFYUI_ARGS}"]
     environment:
       NVIDIA_VISIBLE_DEVICES: "0"
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
