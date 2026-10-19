@@ -55,7 +55,10 @@ RUN pip install \
         --index-url https://download.pytorch.org/whl/cu128
 
 # --- ComfyUI pinned (same as universal Dockerfile) ---
-ARG COMFYUI_REF=5cc4b87
+# Use master (latest stable). 5cc4b87 was a SHA we used during dev but it's
+# no longer reachable as a branch ref on GitHub. master is the production
+# choice; pin to a specific SHA in CI if reproducibility is needed.
+ARG COMFYUI_REF=master
 WORKDIR /opt
 RUN for i in 1 2 3 4 5; do \
       git -c http.version=HTTP/1.1 -c http.postBuffer=524288000 \
