@@ -3,6 +3,55 @@
 All notable changes to this fork. Versions are tagged as
 `comfyui-2080ti-turing-vX.Y.Z` on the corresponding commit.
 
+
+## v1.0.5 — 2026-10-19 — H3 32B 15 sec production fix on sm_75
+
+**Fragmentation fix** for H3 32B heretic int8_convrot on RTX 2080 Ti (sm_75).
+Without this fix, the workflow OOMs in 5-20 sec on sm_75 because
+`cudaMallocAsync` pool fragmentation compounds with each sampling step,
+making runtime scale **exponentially** with video duration (10s → 47m,
+15s → 8-12h projected OOM).
+
+### The fix
+- `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` — PyTorch native allocator
+  uses one big virtual segment per pool. Pages are mapped on demand.
+- `--disable-cuda-malloc` — required. `expandable_segments:True` is a no-op
+  under `cudaMallocAsync` (the ComfyUI default on torch 2.0+).
+- `--disable-dynamic-vram` — forces legacy `ModelPatcher`, disables
+  comfy-aimdo's 308 MB fp32 cast buffer.
+- `--disable-smart-memory` — disables the pressure-cache layer.
+- `--reserve-vram 0` — gives the model ALL 22 GB; 0.5 GB headroom is not
+  enough for H3 32B int8_convrot.
+
+### Recipe origin
+[AMXELA-Official/ltx25-minimax-h3-12gb-vram-comfyui](https://github.com/AMXELA-Official/ltx25-minimax-h3-12gb-vram-comfyui) — same H3 model family on 12 GB VRAM. Adapted for sm_75 / 22 GB.
+
+### Results (RTX 2080 Ti + H3 32B heretic int8_convrot)
+| Duration | Before fix | After fix |
+|---|---|---|
+| 5 sec | ~5 min (129s/it, fragmentation) | **6:13** (12.4s/it) |
+| 10 sec | 47:43 (129.6s/it, exp. frag) | (not re-tested) |
+| 15 sec | 8-12h projected OOM | **19:56** (52.7s/it, linear) |
+
+15 sec 19:56 vs prod (RTX 5080 sage) 15:40 — workstation is 1.27x slower
+but **production-viable**. Linear scaling, no exponential degradation.
+Output: 864×480, 362 frames, 15.08 sec, 3.87 MB MP4 with audio. Correct.
+
+### compose.yaml changes
+- `COMFYUI_ARGS` default: now includes the full `--use-ck-attention
+  --lowvram --reserve-vram 0 --disable-dynamic-vram --disable-cuda-malloc
+  --disable-smart-memory` launch args.
+- `PYTORCH_CUDA_ALLOC_CONF` default: `expandable_segments:True`.
+- Both can be overridden via env: `COMFYUI_ARGS=...` and
+  `PYTORCH_CUDA_ALLOC_CONF=...`.
+
+### Files changed
+- `compose.yaml` (defaults baked in)
+- `README.md` (new "Launch args (v1.0.5+)" section + "Why these flags"
+  + "Anti-patterns" tables; updated Provenance)
+- `scripts/restart_ck.sh` (now a thin wrapper around `docker compose`)
+- `CHANGELOG.md` (this entry)
+
 ## v1.0.0 — 2026-10-18 — production release
 
 **Attention backends**: 3 backends, **ck as default**, sage as Kijai-patch fallback, flash v0.3 experimental.

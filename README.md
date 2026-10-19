@@ -113,6 +113,67 @@ COMFYUI_ARGS="--use-sage-attention" docker compose -f /opt/comfyui-git/compose.y
 COMFYUI_ARGS="--use-flash-attention" docker compose -f /opt/comfyui-git/compose.yaml up -d
 ```
 
+## Launch args (v1.0.5+)
+
+The production contract is baked into `compose.yaml`. The full arg list:
+
+```bash
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+python3 main.py \
+  --extra-model-paths-config /opt/ComfyUI/user/extra_model_paths.yaml \
+  --listen 0.0.0.0 --port 8188 \
+  --lowvram --reserve-vram 0 \
+  --enable-triton-backend --enable-manager \
+  --use-ck-attention \
+  --disable-dynamic-vram \
+  --disable-cuda-malloc \
+  --disable-smart-memory
+```
+
+The four "anti-fragmentation" flags (`--disable-cuda-malloc`,
+`--disable-dynamic-vram`, `--disable-smart-memory`,
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`) are **mandatory on
+sm_75**. Without them, H3 32B int8_convrot runtime scales **exponentially**
+with video duration (10s → 47m, 15s → 8-12h projected OOM).
+
+The `expandable_segments:True` is a **no-op under cudaMallocAsync** —
+that's why `--disable-cuda-malloc` must come first.
+
+Recipe origin: [AMXELA-Official/ltx25-minimax-h3-12gb-vram-comfyui](https://github.com/AMXELA-Official/ltx25-minimax-h3-12gb-vram-comfyui) — same H3 model family on 12 GB VRAM. Adapted for sm_75 / 22 GB.
+
+### Why these flags
+
+| Flag | Reason |
+|---|---|
+| `--use-ck-attention` | Only attention backend that works on sm_75 + int8_convrot. flash v0.3 = precision trap. sage = Triton compile fail on sm_75. |
+| `--disable-cuda-malloc` | Replaces cudaMallocAsync with PyTorch's native allocator. Without this, `expandable_segments:True` is a no-op. |
+| `--disable-dynamic-vram` | Disables comfy-aimdo. Forces legacy `ModelPatcher` real CPU offload. |
+| `--disable-smart-memory` | Disables the pressure-cache layer. Models unload to RAM on workflow end. |
+| `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` | Allocates one large virtual segment per pool; pages are mapped on demand. Eliminates cross-segment fragmentation. |
+| `--reserve-vram 0` | Gives the model ALL 22 GB; 0.5 GB headroom is not enough for H3 32B int8_convrot. |
+| `--lowvram` | Even with 22 GB, the int8_convrot model is 25 GB; needs CPU offload. |
+
+### Measured results (RTX 2080 Ti + H3 32B heretic int8_convrot)
+
+| Duration | Without fix | With fix | Output |
+|---|---|---|---|
+| 5 sec | 5 min (129s/it, fragmentation) | **6:13** (12.4s/it) | 1.55 MB ✅ |
+| 10 sec | 47:43 (129.6s/it, exp. frag) | (not re-tested, expected ~13m) | 5.4 MB ✅ |
+| 15 sec | 8-12h projected OOM | **19:56** (52.7s/it, linear) | 3.87 MB ✅ |
+
+15 sec 19:56 vs prod (RTX 5080 sage) 15:40 — workstation is **1.27x slower
+but production-viable**. Linear scaling, no exponential degradation.
+
+### Anti-patterns (tested, broken on sm_75)
+
+| What I tried | Result |
+|---|---|
+| `--vram-headroom 8.0` | Still OOM at 20s. 8 GB headroom doesn't help when cast buffer is 308 MB and pool is fragmented. |
+| `max_split_size_mb:128` (Qwen's recipe) | Combined with `--force-channels-last`: OOM. Channels-last memory format uses too much VRAM. Without channels-last, marginal benefit. |
+| `--force-channels-last` alone | Eats too much VRAM, no measurable speedup. |
+| `--use-sage-attention` | Triton `TritonGPUAccelerateMatmul` fails on sm_75 (Triton 3.8), falls back to pytorch SDPA, then OOM. |
+| `--use-flash-attention` (v0.3) | 2x slower than ck for correct H3 outputs. Precision-trap-broken for Qwen int8_convrot. |
+
 ## Why three backends, not one
 
 `ck` is hand-tuned CUTLASS composable kernel that uses Turing's int8
@@ -229,7 +290,10 @@ gradually grew:
 - v0.2.1: full matrix + ck baseline + flash attempts
 - v0.3: real sm_75 flash build via 5+1 line patch (0001 + 0002) (correct for H3, broken for Qwen int8)
 - **v1.0 (this release)** (default: ck) — flip default to ck, sage as Kijai-patch fallback, flash experimental.
-- **v1.0.2** — release-readiness cleanup: MIT throughout, baked entrypoint, default(sage) leftovers fixed, 9/9 unit tests.: 3 attention backends — ck (default), sage (Kijai-patch fallback), flash v0.3 (experimental)
+- **v1.0.2** — release-readiness cleanup: MIT throughout, baked entrypoint, default(sage) leftovers fixed, 9/9 unit tests.
+- **v1.0.3** — Qwen code review: compose.yaml env override, build arg pinning, in-image sage+pytest, curl healthcheck, doc ghosts.
+- **v1.0.4** — image size (ComfyUI + ComfyUI-Manager .git cleanup) + Security Model section.
+- **v1.0.5 (this release)** — H3 32B int8_convrot 15 sec production fix on sm_75: PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True + --disable-cuda-malloc + --disable-dynamic-vram + --disable-smart-memory. 15 sec 19:56 vs 8-12h projected OOM. Recipe from AMXELA-Official/ltx25-minimax-h3-12gb-vram-comfyui. See Launch args (v1.0.5+) section.
 
 Patches in `flash-attention-sm75/patches/` are the historical v0.3 work
 for the optional `--use-flash-attention` experimental path. They are

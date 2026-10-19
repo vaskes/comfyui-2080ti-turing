@@ -37,6 +37,7 @@ Special thanks to:
 - **KLM-corporation / farnghwai** for the more comprehensive Tri-Dao-style
   `flash-attention-2080ti` port, which validated the build pipeline and
   provided a reference for the sm_75 + bf16 hardware limitation.
+- **AMXELA** (AMXELA-Official) for the [ltx25-minimax-h3-12gb-vram-comfyui](https://github.com/AMXELA-Official/ltx25-minimax-h3-12gb-vram-comfyui) recipe that solved the H3 32B int8_convrot 15 sec OOM on sm_75 (`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` + `--disable-cuda-malloc` + `--disable-dynamic-vram` + `--disable-smart-memory`). Their documented workaround for the same model family on 12 GB VRAM translated directly to our 22 GB sm_75 setup. This is the v1.0.5 production contract.
 - **Tri Dao** and the **Dao-AILab** team for the original FlashAttention /
   FlashAttention-2 papers and reference implementation, without which none of
   the sm_75 ports would have existed.
