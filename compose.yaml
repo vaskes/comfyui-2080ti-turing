@@ -30,7 +30,17 @@ services:
       #   --use-sage-attention   Kijai-patch fallback (for Sage Attn patch nodes)
       #   --use-flash-attention  experimental v0.3 (H3 only)
       # The matrix runner always sets COMFYUI_ARGS explicitly.
-      COMFYUI_ARGS: ${COMFYUI_ARGS:---use-ck-attention}
+      # Production contract (v1.0.5). The trio
+      #   --disable-cuda-malloc + PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True + --disable-dynamic-vram
+      # is REQUIRED to avoid cudaMallocAsync pool fragmentation on sm_75.
+      # Without this, runtime scales exponentially with workload size (10s→47m, 15s→8-12h OOM).
+      # See flash-attention-sm75/CREDITS.md for the AMXELA recipe this came from.
+      # Override at start time: COMFYUI_ARGS="..." docker compose up -d
+      COMFYUI_ARGS: ${COMFYUI_ARGS:---extra-model-paths-config /opt/ComfyUI/user/extra_model_paths.yaml --listen 0.0.0.0 --port 8188 --lowvram --reserve-vram 0 --enable-triton-backend --enable-manager --use-ck-attention --disable-dynamic-vram --disable-cuda-malloc --disable-smart-memory}
+      # PyTorch CUDA allocator tuning. expandable_segments is no-op under
+      # cudaMallocAsync — combine with --disable-cuda-malloc for it to work.
+      # This is the H3 32B int8_convrot OOM fix on sm_75 (Turing). See commit history.
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
     ports:
       - "8188:8188"
     volumes:
