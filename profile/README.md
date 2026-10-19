@@ -53,11 +53,20 @@ and the "Installed" tab becomes inconsistent.
 The prod pattern (mirrored from `/opt/comfyui_bad/user80` + `user90`)
 keeps each instance's `__manager/` in its own `user*/` bind-mount.
 
-## Why are GPUs numbered 1 and 2 (not 0 and 1)?
+## Why are container names 2080_1 and 2080_2 (not 2080_0 and 2080_1)?
 
 Future hardware: this server will get a third GPU. `nvidia-smi` reorders
 when GPUs are added/removed. Using `1` and `2` as suffixes reserves
-room for `0`-named slots to slide.
+slot 0 for the future-added card; existing containers won't slide.
+
+**Current GPU mapping** (only 2 RTX 2080 Ti present in this host):
+- `comfyui2080_1` -> GPU 0 in `nvidia-smi` (NVIDIA_VISIBLE_DEVICES=0)
+- `comfyui2080_2` -> GPU 1 in `nvidia-smi` (NVIDIA_VISIBLE_DEVICES=1)
+
+When the third card is added (and nvidia-smi renumbers), the existing
+two stay mapped to their physical GPUs because the suffix is just a
+name, not a GPU index. The `device_ids` in the compose files can be
+updated at that point.
 
 ## Quick start
 

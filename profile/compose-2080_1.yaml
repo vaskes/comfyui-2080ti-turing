@@ -16,7 +16,7 @@ services:
     # It auto-installs missing test deps (pytest), then execs ComfyUI with $COMFYUI_ARGS.
     entrypoint: [/usr/local/bin/comfyui-entrypoint.sh]
     environment:
-      NVIDIA_VISIBLE_DEVICES: "1"   # GPU index 1 in nvidia-smi (RTX 2080 Ti #1)
+      NVIDIA_VISIBLE_DEVICES: "0"   # GPU index 1 in nvidia-smi (RTX 2080 Ti #1)
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       # Production contract (v1.0.5+). The trio
       #   --disable-cuda-malloc + PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True + --disable-dynamic-vram
@@ -48,4 +48,4 @@ services:
           devices:
             - driver: nvidia
               capabilities: [gpu]
-              device_ids: ["1"]
+              device_ids: ["0"]
