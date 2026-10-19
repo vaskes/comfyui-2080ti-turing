@@ -27,11 +27,25 @@ making runtime scale **exponentially** with video duration (10s → 47m,
 [AMXELA-Official/ltx25-minimax-h3-12gb-vram-comfyui](https://github.com/AMXELA-Official/ltx25-minimax-h3-12gb-vram-comfyui) — same H3 model family on 12 GB VRAM. Adapted for sm_75 / 22 GB.
 
 ### Results (RTX 2080 Ti + H3 32B heretic int8_convrot)
-| Duration | Before fix | After fix |
-|---|---|---|
-| 5 sec | ~5 min (129s/it, fragmentation) | **6:13** (12.4s/it) |
-| 10 sec | 47:43 (129.6s/it, exp. frag) | (not re-tested) |
-| 15 sec | 8-12h projected OOM | **19:56** (52.7s/it, linear) |
+
+Two workflow resolutions tested: 0.4 MP (864x480) and 1 MP (1376x768).
+The 1 MP workflow is the production contract from
+`/opt/comfyui/video_minimax_h3_t2v_10sec.json`.
+
+| Resolution | Duration | Before fix | After fix | Output |
+|---|---|---|---|---|
+| 0.4 MP | 5 sec | ~5 min (129s/it) | **6:13** (12.4s/it) | 1.55 MB |
+| 0.4 MP | 10 sec | 47:43 (129.6s/it) | (not re-tested) | 5.4 MB |
+| 0.4 MP | 15 sec | 8-12h OOM | **19:56** (52.7s/it) | 3.87 MB |
+| 1 MP | 5 sec | (not tested) | **18:40** (~56s/it) | 3.16 MB |
+| 1 MP | 10 sec | OOM | OOM (free=7.7 MB) | — |
+| 1 MP | 15 sec | (would OOM) | (not viable) | — |
+
+**Workstation 1 MP VRAM ceiling**: 1 MP works for 5 sec, OOMs for 10+ sec.
+The 25 GB model + per-step activations at 1 MP x 240+ frames exceed the
+22 GB residual VRAM. Even `--vram-headroom 4` does not help. For 1 MP 15
+sec, use prod Blackwell (RTX 5080 / 5090) where ck manual cast
+`bf16/bf16` (vs sm_75 `bf16/fp32`) leaves 1.6+ GB headroom.
 
 15 sec 19:56 vs prod (RTX 5080 sage) 15:40 — workstation is 1.27x slower
 but **production-viable**. Linear scaling, no exponential degradation.
