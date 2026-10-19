@@ -25,10 +25,12 @@ What lives in `profile/`:
 | `Dockerfile.production` | Production image with prod custom_node dependencies baked in. Builds from the same base as the main Dockerfile + adds the pip deps for the 22 custom_nodes in `/opt/comfyui_bad/custom_nodes/`. |
 | `compose-2080_1.yaml` | Instance 1: container `comfyui2080_1`, port 8188, GPU 0, `/opt/comfyui-2080_1/{output,user}` volumes. |
 | `compose-2080_2.yaml` | Instance 2: container `comfyui2080_2`, port 8189, GPU 1, `/opt/comfyui-2080_2/{output,user}` volumes. |
-| `scripts/data-dirs.sh` | Creates the per-instance and shared data directories with correct ownership. |
+| `scripts/data-dirs.sh` | Creates the per-instance and shared data directories + copies `extra_model_paths.yaml` template. |
 | `scripts/build.sh` | Builds `comfyui-workstation:cu130-torch-stable-gcc-prod` from this profile. |
+| `scripts/install-prod-custom-nodes.sh` | rsync 22 production custom_nodes from `/opt/comfyui_bad/custom_nodes/` to `/opt/comfyui/custom_nodes/`. |
 | `scripts/start-both.sh` | Starts both instances via docker compose. |
 | `scripts/stop-both.sh` | Stops both. |
+| `scripts/restart-both.sh` | Restarts both (use after adding new custom_nodes). |
 
 What lives outside the repo (host paths, not in git):
 
@@ -68,6 +70,40 @@ two stay mapped to their physical GPUs because the suffix is just a
 name, not a GPU index. The `device_ids` in the compose files can be
 updated at that point.
 
+## Verified custom_nodes (v1.1.2)
+
+All 22 production custom_nodes from `/opt/comfyui_bad/custom_nodes/` were
+rsynced to `/opt/comfyui/custom_nodes/` and tested on both instances.
+**All loaded successfully** in ~4.5 sec total. The pip deps baked into
+`profile/Dockerfile.production` (one long `pip install` line aggregating
+all 22 nodes' requirements.txt) covered every dependency — no per-start
+install needed.
+
+| Custom node | Import time (s) | Notes |
+|---|---|---|
+| comfyui-easy-use | 2.8-3.0 | 48 nodes |
+| comfyui-kjnodes | 1.2 | many nodes |
+| comfyui-spectrum-minimax-h3 | 0.3 | H3 patches |
+| seedvr2_videoupscaler | 0.3 | needs flash-attn for fast path; falls back to PyTorch |
+| ComfyUI-MAINodes | 0.2 | |
+| comfyui_layerstyle | 0.2 | |
+| ComfyUI-Qwen3-TTS | 0.1-0.2 | |
+| ComfyUI-H3-Multishot | 0.1 | H3 multishot + GGUF integration |
+| ComfyUI_JoyAI_Echo_GGUF_Nodes | 0.1 | |
+| comfyui-videohelpersuite | 0.1 | |
+| (12 more) | 0.0 | all import cleanly |
+
+Warnings observed (NOT errors, just notes):
+- `flash-attn is not installed. Will only run the manual PyTorch version.`
+  — the v0.3 flash build is bind-mounted separately and not loaded by
+  default. Production uses ck (--use-ck-attention), so this is fine.
+- `[rgthree-comfy] ComfyUI Node 2.0 may be incompatible` — upstream
+  compatibility note from rgthree author, not an error.
+- `[ComfyUI-Manager] Blocked by policy: /opt/ComfyUI/custom_nodes/ComfyUI-Manager`
+  — security policy default. The compose files set
+  `COMFYUI_MANAGER_SECURITY_LEVEL=weak` for production to allow
+  installing missing nodes from the manager UI.
+
 ## Quick start
 
 ```bash
@@ -78,10 +114,14 @@ bash profile/scripts/data-dirs.sh
 # 2. Build production image (one-time, ~30 min)
 bash profile/scripts/build.sh
 
-# 3. Start both
+# 3. Install production custom_nodes (one-time, copies 22 nodes from
+#    /opt/comfyui_bad/custom_nodes/ to /opt/comfyui/custom_nodes/)
+bash profile/scripts/install-prod-custom-nodes.sh
+
+# 4. Start both
 bash profile/scripts/start-both.sh
 
-# 4. Verify
+# 5. Verify
 curl -m 3 http://127.0.0.1:8188/system_stats   # instance 1
 curl -m 3 http://127.0.0.1:8189/system_stats   # instance 2
 ```
