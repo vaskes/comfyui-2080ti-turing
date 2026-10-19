@@ -291,7 +291,22 @@ comfyui-2080ti-turing/
 │       └── 0002-relax-arch-gates.patch  # relax runtime gates
 └── sage-attention-sm75/       # SageAttention 1.0.6 (Kijai patch fallback)
     └── README.md              # sage install + Kijai patch workflow
+└── profile/                   # vaskes-specific: 2x 2080 Ti production deployment
+    ├── README.md              # why profile/ exists, what lives in/out of the repo
+    ├── Dockerfile.production   # prod image: deps for 22 custom_nodes baked in
+    ├── compose-2080_1.yaml    # instance 1 (GPU 1, port 8188, /opt/comfyui-2080_1)
+    ├── compose-2080_2.yaml    # instance 2 (GPU 2, port 8189, /opt/comfyui-2080_2)
+    └── scripts/
+        ├── data-dirs.sh       # create per-instance + shared dirs
+        ├── build.sh           # build the production image
+        ├── start-both.sh      # start both
+        └── stop-both.sh       # stop both
 ```
+
+The `profile/` subdir is **Vaskes-specific** production config — see
+[profile/README.md](profile/README.md) for the rationale. The main repo
+(`/Dockerfile`, `/compose.yaml`, tests, attention backends) is universal
+and works for any single-RTX-2080-Ti setup.
 
 > **No binary artefacts in this repo.** PNG/MP4 files from test runs are
 > not checked in — they only prove the model produced an image, not the
