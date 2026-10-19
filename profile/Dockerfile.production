@@ -1,0 +1,140 @@
+# Profile: production image for 2x RTX 2080 Ti sm_75 workstation.
+#
+# This Dockerfile builds the production image for the vaskes-specific
+# two-instance deployment (comfyui2080_1, comfyui2080_2).
+#
+# Inherits the universal base (torch 2.14 cu130, ComfyUI pinned,
+# ComfyUI-Manager, SageAttention 1.0.6) and ADDS the pip dependencies
+# of the production custom_nodes (mirrored from /opt/comfyui_bad/
+# custom_nodes/ on this host). When the user later clones the actual
+# custom_node code into /opt/comfyui/custom_nodes/, the deps are
+# already baked — no per-start install.
+#
+# Build context: the repo root (so we can COPY docker/entrypoint.sh
+# from the universal repo). Build:
+#   docker build -f profile/Dockerfile.production -t comfyui-workstation:cu130-torch-stable-gcc-prod .
+#
+# This file is profile/ — vaskes-specific. The main repo's universal
+# Dockerfile at ./Dockerfile is unchanged.
+
+# === base from universal repo ===
+FROM nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONHASHSEED=random
+
+# --- system deps (sox, libsndfile, ffmpeg, gcc for triton) ---
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl wget git \
+        python3.12 python3.12-venv python3.12-dev \
+        gcc g++ \
+        libgl1 libglib2.0-0 \
+        libsndfile1 libjpeg-dev libpng-dev \
+        ffmpeg sox libsox-fmt-all \
+        && \
+    rm -rf /var/lib/apt/lists/* && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
+
+# --- venv ---
+ENV VENV=/opt/venv
+ENV PATH="$VENV/bin:$PATH"
+RUN python3 -m venv "$VENV" && \
+    pip install --upgrade pip wheel setuptools
+
+# --- pytorch stable cu130 ---
+RUN pip install \
+        torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cu130 \
+    || pip install \
+        torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cu128
+
+# --- ComfyUI pinned (same as universal Dockerfile) ---
+ARG COMFYUI_REF=5cc4b87
+WORKDIR /opt
+RUN for i in 1 2 3 4 5; do \
+      git -c http.version=HTTP/1.1 -c http.postBuffer=524288000 \
+          clone --depth 1 --single-branch --branch ${COMFYUI_REF} \
+          https://github.com/comfyanonymous/ComfyUI.git /opt/ComfyUI \
+          && break; \
+      echo "git clone failed (attempt $i), retrying in 10s..."; \
+      rm -rf /opt/ComfyUI; sleep 10; \
+    done && \
+    cd /opt/ComfyUI && \
+    pip install -r requirements.txt && \
+    rm -rf .git
+
+# --- ComfyUI-Manager ---
+ARG COMFY_MANAGER_REF=main
+WORKDIR /opt/ComfyUI/custom_nodes
+RUN git clone --depth 1 --branch ${COMFY_MANAGER_REF} https://github.com/ltdrdata/ComfyUI-Manager.git && \
+    pip install -r ComfyUI-Manager/requirements.txt && \
+    rm -rf ComfyUI-Manager/.git
+
+# --- Triton + SageAttention 1.0.6 + pytest (same as universal) ---
+RUN pip install triton sageattention==1.0.6 pytest
+
+# === PRODUCTION CUSTOM_NODE DEPS (from /opt/comfyui_bad) ===
+# These are the pip packages required by the 22 custom_nodes in
+# /opt/comfyui_bad/custom_nodes/. When the user later clones the
+# actual custom_node code into /opt/comfyui/custom_nodes/, all
+# deps are already in the image — ComfyUI auto-discovers them at
+# startup without pip install.
+#
+# Source: requirements.txt of each node in /opt/comfyui_bad/custom_nodes/.
+# When the user adds a new prod custom_node, append its deps here.
+RUN pip install --no-cache-dir \
+        # comfyui-easy-use
+        diffusers "accelerate" "clip_interrogator>=0.6.0" \
+        lark onnxruntime "opencv-contrib-python-headless" \
+        sentencepiece spandrel matplotlib "peft" \
+        # ComfyUI-GGUF
+        "gguf>=0.13.0" "protobuf" \
+        # ComfyUI_JoyAI_Echo_GGUF_Nodes
+        "transformers>=4.50,<4.58" "numpy>=2.0" "scipy>=1.13" "Pillow>=10" "einops>=0.8" \
+        # comfyui-kjnodes
+        "color-matcher" "mss" "pillow>=10.3.0" \
+        # comfyui_layerstyle
+        "Scipy" "scikit_image" "scikit_learn" "pymatting" "timm" "colour-science" \
+        "blend_modes" "huggingface_hub>=0.23.4" "loguru" \
+        # ComfyUI-Manager extras
+        "PyGithub" "typer" "rich" "toml" "uv" "chardet" "packaging" "nh3>=0.3.7" \
+        # comfyui_nvidia_rtx_nodes
+        "nvidia-vfx" \
+        # ComfyUI-Qwen3-TTS
+        "qwen-tts" "modelscope" "soundfile" "librosa" "tensorboard" \
+        # comfyui-videohelpersuite
+        "imageio-ffmpeg" \
+        # ComfyUI-Y7Nodes
+        "color-matcher>=0.5.0" \
+        # comfyui-frame-interpolation
+        "cupy-cuda12x" \
+        # seedvr2_videoupscaler
+        "tqdm" "psutil" "omegaconf>=2.3.0" "rotary_embedding_torch>=0.5.3" \
+        # misc (matrix-nio, wetext, hydra-core, deepspeed, conformer, etc.)
+        "matrix-nio" "wetext" "hydra-core" "HyperPyYAML" "inflect" \
+        "lightning" "omegaconf" "openai-whisper" "pyworld" \
+        "deepspeed" "conformer" "gradio" "gdown" \
+        "GitPython" "imageio" "safetensors" "accelerate"
+
+# --- runtime defaults ---
+ENV NVIDIA_VISIBLE_DEVICES=0 \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    PYTHONPATH=/opt/ComfyUI:/opt/ComfyUI/custom_nodes/ComfyUI-Manager
+
+# --- Entrypoint (from universal repo) ---
+COPY docker/entrypoint.sh /usr/local/bin/comfyui-entrypoint.sh
+RUN chmod +x /usr/local/bin/comfyui-entrypoint.sh
+
+WORKDIR /opt/ComfyUI
+EXPOSE 8188
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+    CMD curl -fsS -m 5 http://127.0.0.1:8188/system_stats || exit 1
+
+ENTRYPOINT ["/usr/local/bin/comfyui-entrypoint.sh"]

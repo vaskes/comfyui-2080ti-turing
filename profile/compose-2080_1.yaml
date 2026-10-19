@@ -1,0 +1,51 @@
+name: comfyui2080-1
+
+# Profile: instance 1 of 2 (RTX 2080 Ti #1)
+# See profile/README.md for the architecture.
+
+services:
+  comfyui2080_1:
+    build:
+      context: ..
+      dockerfile: profile/Dockerfile.production
+    image: comfyui-workstation:cu130-torch-stable-gcc-prod
+    container_name: comfyui2080_1
+    restart: unless-stopped
+    runtime: nvidia
+    # Entrypoint is baked into the image at /usr/local/bin/comfyui-entrypoint.sh.
+    # It auto-installs missing test deps (pytest), then execs ComfyUI with $COMFYUI_ARGS.
+    entrypoint: [/usr/local/bin/comfyui-entrypoint.sh]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "1"   # GPU index 1 in nvidia-smi (RTX 2080 Ti #1)
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # Production contract (v1.0.5+). The trio
+      #   --disable-cuda-malloc + PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True + --disable-dynamic-vram
+      # is required to avoid cudaMallocAsync pool fragmentation on sm_75.
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+      COMFYUI_ARGS: ${COMFYUI_ARGS:---extra-model-paths-config /opt/ComfyUI/user/extra_model_paths.yaml --listen 0.0.0.0 --port 8188 --lowvram --reserve-vram 0 --enable-triton-backend --enable-manager --use-ck-attention --disable-dynamic-vram --disable-cuda-malloc --disable-smart-memory}
+    ports:
+      - "8188:8188"
+    volumes:
+      # Shared (both instances): models, input, workflows, custom_nodes
+      - /opt/comfyui/models:/opt/ComfyUI/models
+      - /opt/comfyui/input:/opt/ComfyUI/input
+      - /opt/comfyui/workflows:/opt/ComfyUI/workflows
+      - /opt/comfyui/custom_nodes:/opt/ComfyUI/custom_nodes
+      # Per-instance: output, user (incl. __manager ComfyUI-Manager DB)
+      - /opt/comfyui-2080_1/output:/opt/ComfyUI/output
+      - /opt/comfyui-2080_1/user:/opt/ComfyUI/user
+      # Source repo (read-only) — for in-container test runs
+      - /opt/comfyui-git:/opt/comfyui-git:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-m", "5", "http://127.0.0.1:8188/system_stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ["1"]
