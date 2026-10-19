@@ -38,7 +38,11 @@ The 1 MP workflow is the production contract from
 | 0.4 MP | 10 sec | 47:43 (129.6s/it) | (not re-tested) | 5.4 MB |
 | 0.4 MP | 15 sec | 8-12h OOM | **19:56** (52.7s/it) | 3.87 MB |
 | 1 MP | 5 sec | (not tested) | **18:40** (~56s/it) | 3.16 MB |
-| 1 MP | 10 sec | OOM | OOM (free=7.7 MB) | — |
+| 1 MP | 6 sec | (not tested) | **25:10** (~60s/it) | 3.42 MB |
+| 1 MP | 7 sec | (not tested) | **28:56** (~72s/it) | 4.41 MB |
+| 1 MP | 8 sec | (not tested) | **32:27** (~82.7s/it) | 4.37 MB — ceiling |
+| 1 MP | 9 sec | OOM | OOM (free=7.7 MB) | — |
+| 1 MP | 10 sec | OOM | OOM (free=14 MB) | — |
 | 1 MP | 15 sec | (would OOM) | (not viable) | — |
 
 **Workstation 1 MP VRAM ceiling**: 1 MP works for 5 sec, OOMs for 10+ sec.

@@ -168,18 +168,31 @@ workstation falls back to when 1 MP exceeds VRAM.
 | 10 sec | 47:43 (129.6s/it, exp. frag) | (not re-tested, expected ~13m) | 5.4 MB ✅ |
 | 15 sec | 8-12h projected OOM | **19:56** (52.7s/it, linear) | 3.87 MB ✅ |
 
-#### 1 MP (1376×768) — production workflow, workstation OOM ceiling
+#### 1 MP (1376×768) — production workflow, fine-grained ceiling
 
-| Duration | With fix | Status | Output |
-|---|---|---|---|
-| 5 sec | 18:40 (~56s/it) | ✅ works | 3.16 MB (124 frames) |
-| 10 sec | OOM at 211s | ❌ VRAM ceiling | 7.7 MB free at peak |
-| 15 sec | (would OOM) | ❌ never tested (5→10 same OOM) | — |
+Sequential tests on 1 MP found the exact boundary at **192 frames (8 sec)**.
+Anything above OOMs.
 
-**Why 1MP OOMs at 10+ sec on 22 GB**: the model itself is 25 GB and must
-CPU-offload. At 1MP × 240+ frames, the per-step activation memory exceeds
-the residual VRAM after model load. Even `--vram-headroom 4` doesn't help
-(model fills all 18 GB and OOMs on the next cast buffer alloc).
+| Duration | Frames | Wall time | sec/step | Output | Status |
+|---|---|---|---|---|---|
+| 5 sec | 124 | 18:40 | 56 | 3.16 MB | ✅ |
+| 6 sec | 158 | 25:10 | 60 | 3.42 MB | ✅ |
+| 7 sec | 175 | 28:56 | 72 | 4.41 MB | ✅ |
+| **8 sec** | **192** | **32:27** | **82.7** | **4.37 MB** | **✅ ceiling** |
+| 9 sec | 226 | OOM @ 211s | — | 7.7 MB free | ❌ |
+| 10 sec | 243 | OOM | — | — | ❌ |
+
+**Why 1MP OOMs at 9+ sec on 22 GB**: the 25 GB H3 model CPU-offloads
+`0.00 MB usable, 0.00 MB loaded, 21604.54 MB offloaded`. At 1MP × 226+
+frames, the per-step activation memory exceeds the residual ~540 MB VRAM
+after model load. Even `--vram-headroom 4` doesn't help (model fills all
+18 GB and OOMs on the next cast buffer alloc at 14 MB free).
+
+**Production workflow** (`/opt/comfyui/user/workflows/video_minimax_h3_t2v_10sec.json`)
+is set to 10 sec by default; on workstation this OOMs. **Change
+`140:133` PrimitiveFloat value to 8 (or less) for 1 MP viability** on
+workstation, OR use 0.4 MP (resize workflow `115` ResolutionSelector
+`megapixels` to 0.4) for 10+ sec 1 MP equivalent at 864×480.
 
 **Production verdict**: workstation is **0.4 MP only for 10+ sec videos**.
 For 1 MP 15 sec, use the prod Blackwell (RTX 5080 / 5090) where ck
@@ -191,12 +204,17 @@ for activations.
 | Frame count | 0.4 MP per step | 1 MP per step |
 |---|---|---|
 | ~124 (5 sec) | 12.4 sec | 56 sec |
-| ~243 (10 sec) | (not re-tested) | OOM |
+| ~158 (6 sec) | (not tested) | 60 sec |
+| ~175 (7 sec) | (not tested) | 72 sec |
+| ~192 (8 sec) | (not tested) | 82.7 sec |
+| ~243 (10 sec) | 45 sec | OOM |
 | ~362 (15 sec) | 52.7 sec | (not viable) |
 
-1 MP is **~4.5x more per step** than 0.4 MP at the same frame count.
-At 0.4 MP the per-step time scales linearly with frame count (12.4 → 52.7
-for 124 → 362 frames, ~3x).
+1 MP is **~4.5x more per step** than 0.4 MP at the same frame count
+(56 vs 12.4 at 124 frames). At 0.4 MP the per-step time scales linearly
+with frame count (12.4 → 52.7 for 124 → 362 frames, ~3x). At 1 MP the
+per-step time grows super-linearly (56 → 82.7 for 124 → 192 frames,
+1.5x for 1.5x frames) as activations approach the VRAM ceiling.
 
 15 sec 19:56 vs prod (RTX 5080 sage) 15:40 — workstation is **1.27x slower
 but production-viable**. Linear scaling, no exponential degradation.
