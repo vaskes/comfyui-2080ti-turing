@@ -1,0 +1,67 @@
+name: greenboost-test
+
+# GreenBoost test instance. Does NOT touch comfyui2080_1 / comfyui2080_2.
+#
+# GPU 0 = PCI 01:00.0, PCIe Gen3 x16. GPU 1 is only x4, which is slower than
+# plain UVM, so GreenBoost is only worth it on GPU 0.
+
+services:
+  comfyui2080_test:
+    image: comfyui-workstation:cu130-torch-stable-gcc-prod
+    container_name: comfyui2080_test
+    restart: "no"
+    runtime: nvidia
+    entrypoint: [/usr/local/bin/comfyui-entrypoint.sh]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "0"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+
+      # --- GreenBoost shim ---
+      LD_PRELOAD: /usr/local/lib/libgreenboost_cuda.so
+      GREENBOOST_ACTIVE: "1"
+      GREENBOOST_DEBUG: "1"
+      # Lower = spill later = activations stay in VRAM longer.
+      # At 2048 MB activations spill too and throughput collapses; see
+      # profile/greenboost/LIMITATIONS.md before raising this.
+      GREENBOOST_VRAM_HEADROOM_MB: "2048"
+
+      # MUST be False. PyTorch's expandable segments use the VMM API
+      # (cuMemCreate / cuMemMap / cuMemAddressReserve), which the shim does not
+      # intercept. With it on, the shim inflates the reported total VRAM and
+      # the real driver still OOMs with tens of GB free.
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:False"
+
+      COMFYUI_ARGS: --extra-model-paths-config /opt/ComfyUI/user/extra_model_paths.yaml --listen 0.0.0.0 --port 8188 --lowvram --reserve-vram 0 --enable-triton-backend --enable-manager --use-ck-attention --disable-dynamic-vram --disable-cuda-malloc --disable-smart-memory
+
+    # A bind-mount of the device node is NOT enough -- the device cgroup still
+    # denies it. This key maps to docker --device, which whitelists it.
+    devices:
+      - /dev/greenboost:/dev/greenboost
+
+    volumes:
+      - /opt/comfyui/models:/opt/ComfyUI/models
+      - /opt/comfyui/input:/opt/ComfyUI/input
+      - /opt/comfyui/workflows:/opt/ComfyUI/workflows
+      - /opt/comfyui/custom_nodes:/opt/ComfyUI/custom_nodes
+      - /opt/greenboost-test/output:/opt/ComfyUI/output
+      - /opt/greenboost-test/user:/opt/ComfyUI/user
+      - /usr/local/lib/libgreenboost_cuda.so:/usr/local/lib/libgreenboost_cuda.so:ro
+      - /sys/class/greenboost:/sys/class/greenboost:ro
+
+    ports:
+      - "8190:8188"
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-m", "5", "http://127.0.0.1:8188/system_stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ["0"]
