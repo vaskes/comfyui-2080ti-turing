@@ -47,9 +47,34 @@ before:  21 604 MB usable, full load: False  (model entirely offloaded)
 after:   43 486 MB usable, full load: True   (model resident, hot part in VRAM)
 ```
 
-**Does not work: offloading activations.** See `LIMITATIONS.md`. Short version —
-weights stream once per layer, activations stream dozens of times per step, and
-11 GB/s vs 580 GB/s in VRAM is a 52x penalty on hot data.
+**The rule that makes it usable: `--lowvram`.** Weights may live in T2;
+activations must not. See `LIMITATIONS.md` for the A/B that proves it and the
+config that gets it right.
+
+With `--reserve-vram 6144` + `GREENBOOST_VRAM_HEADROOM_MB=2048`, H3 32B ran
+**1 MP / 226 frames / 8 steps in 1:04:55**, steps flat at 453–459 s, 194 W,
+`utilization.memory` 12.6%. Output validated: h264 + aac, 226/226 frames @ 24 fps,
+9.417 s, 7.89 MB, no artefacts. That is a size that **OOMs natively** (the pure
+VRAM ceiling on this box is 192 frames).
+
+---
+
+## Verdict: viable on Gen5, marginal on Gen3
+
+The whole cost model is the PCIe link. Measured here: **11.4 GB/s = 71% of the
+Gen3 x16 ceiling**, and the slot is physically Gen3 — no setting recovers more
+than ~12%.
+
+| bus | T2 speed | penalty vs native | what it is |
+|---|---|---|---|
+| Gen3 x16 | 11.4 GB/s | **x2.1** | emergency exit — runs what would OOM |
+| Gen5 x16 | ~50 GB/s | **x1.26** | normal working mode |
+
+Threshold is roughly **x1.5**. Below it the tool is a crash-harness, above it a
+mode. On this box it is the first; on a 5080/5090 it is the second.
+
+**Do not tune the pool expecting a different answer. Pool size is not the
+constraint — bus bandwidth is.**
 
 ---
 

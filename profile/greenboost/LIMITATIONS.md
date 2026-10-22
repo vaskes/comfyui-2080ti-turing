@@ -5,7 +5,7 @@ CUDA UMD 13.4, kernel 7.0.0-38). Numbers, not expectations.
 
 ---
 
-## 1. Offloading activations is not viable
+## 1. `--highvram` breaks it. `--lowvram` is mandatory.
 
 **The rule: spill weights, never activations.**
 
@@ -13,31 +13,74 @@ Weights stream once per layer. Activations stream dozens of times per step.
 T2 gives 11 GB/s; VRAM gives ~580 GB/s for the same data. That is a **52x
 penalty on exactly the data that needs to be hot.**
 
-Measured on H3 32B, 1 MP, 226 frames, `GREENBOOST_VRAM_HEADROOM_MB=2048`:
+The shim inflates what `cuMemGetInfo` reports, so ComfyUI believes it has
+72.5 GB when it has 22 GB (`Initial CUDA memory: 72.12GB free / 72.50GB total`).
+It cannot tell the difference, and `--highvram` is executed literally: it packs
+whatever it thinks is VRAM until nothing is left, and the hot data is what gets
+pushed out.
+
+### A/B, H3 32B, 1 MP, 124 frames, 4 steps — one flag changed
+
+| | B `--lowvram` | A `--highvram` |
+|---|---|---|
+| s/it | **172.89 / 175.15 / 176.25 / 176.98** | **zero steps in 60 minutes** |
+| UNET | `loaded partially; 21604.54 MB offloaded` | `loaded completely; 21604.54 MB loaded` |
+| `real_free` | 19 499 MB | **3 MB** |
+| T2 available | has room | **0 MB** |
+| `utilization.memory` | 12.6% avg | **1% avg** |
+| power while working | 194 W | 123 W |
+
+In A the card is filled to within 3 MB of empty, activations have nowhere real
+to go, and the hot path drops onto PCIe. The GPU reports 100% utilisation the
+whole time and draws 123 W — **it is computing against memory it cannot reach
+at speed.** `utilization.gpu` lies here; `utilization.memory` does not.
+
+No OOM, no exception, nothing in the log. It just quietly never finishes a step.
+
+**`--highvram` and `--gpu-only` must not be used under any VRAM-inflating shim.**
+If you see one in a profile, that is a landmine, not an optimisation.
+
+### What works
+
+`--reserve-vram 6144` + `GREENBOOST_VRAM_HEADROOM_MB=2048` + `--lowvram`:
 
 ```
-loaded completely; 43486.75 MB usable, 21604.54 MB loaded, full load: True
+--lowvram --reserve-vram 6144 --disable-dynamic-vram --disable-cuda-malloc
+--disable-smart-memory --use-ck-attention
 ```
 
-The model loads fully — capacity went from 21.6 GB usable / fully offloaded to
-43.5 GB / fully resident. And then:
+H3 32B, 1 MP, 226 frames, 8 steps → **1:04:55**, steps 453–459 s flat, 194 W.
+h264 + aac, 226/226 frames @ 24 fps, 9.417 s, 7.89 MB, frames clean.
+That length **OOMs without the pool** — pure VRAM caps at 192 frames.
 
-```
-0%|          | 0/8 [00:00<?, ?it/s]     ← after 35 minutes
-```
+`--lowvram` is not a precaution here. It loads CLIP into VRAM once, runs it,
+and offloads it to CPU — that part is normal and correct. What it also does is
+keep the UNET resident in T2, which is what leaves real VRAM for activations.
 
-GPU pinned at 100% / 128 W the whole time, so it was computing, not hung. One
-denoise step did not finish in 35 minutes. GPU memory held steady, so no leak.
+### Gotcha: `--reserve-vram` is in inflated units
 
-Cause: with headroom at 2048 MB, activations spilled to T2 as well as weights.
-VRAM was full of model weights (`full load: True`), leaving no room, so every
-activation buffer went over PCIe.
+`--reserve-vram 6144` means 6144 MB **of the 72.5 GB ComfyUI thinks it has**, not
+6 GB of real VRAM. It does not control real memory at all. The only knob that
+does is `GREENBOOST_VRAM_HEADROOM_MB` on the shim side.
 
-**Next thing to try, not yet done:** raise `GREENBOOST_VRAM_HEADROOM_MB` so
-ComfyUI's own `--reserve-vram` leaves headroom for activations, keeping hot data
-in VRAM and only the cold weight layers in T2. That is the configuration that
-would actually make this worth deploying — test it on a config that previously
-OOM'd.
+---
+
+## 1b. Viability depends on bus generation, not pool size
+
+Measured H2D 11.4 GB/s = 71% of the Gen3 x16 ceiling. `lspci` reports
+`LnkSta 2.5GT/s` at idle — that is ASPM power saving, not degradation: 11.4 GB/s
+is physically above the Gen1 x16 ceiling, so the link trains to Gen3 under load.
+The slot is physically Gen3.
+
+Tier-2 overhead scales roughly as 1/bandwidth:
+
+| bus | T2 | overhead vs native | verdict |
+|---|---|---|---|
+| Gen3 x16 | 11.4 GB/s | x2.1 | emergency exit |
+| Gen5 x16 | ~50 GB/s | x1.26 | normal mode |
+
+**Enlarging the pool on a slow link does not help.** If you take this to a 5080,
+that is the configuration it was designed for.
 
 ---
 
@@ -94,6 +137,12 @@ can fail from the library, and the reverse has not been disproven.
 
 ## 4. Other things that do not work
 
+- **No PCIe byte counter on this driver.** `nvidia-smi --query-gpu=utilization.pcie`
+  → `Field "utilization.pcie" is not a valid field to query`; `dmon` has no PCIe
+  columns; `pmon -s t` returns nothing. GeForce on 615.71.09 simply does not
+  expose them. Use `utilization.gpu` + `utilization.memory` + `power.draw` at 1 Hz
+  instead. **`utilization.memory` is the metric that distinguishes "working" from
+  "spinning"** — `utilization.gpu` reads 100% in both cases and lies.
 - `cuImportExternalMemory` + `cuExternalMemoryGetMappedBuffer` from the DMA-BUF
   fd → `999 CUDA_ERROR_UNKNOWN`. The shim resolves both symbols (lines
   736-740) and **never calls them** — dead code in upstream.
