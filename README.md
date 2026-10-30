@@ -370,6 +370,18 @@ for the optional `--use-flash-attention` experimental path. They are
 NOT applied by default — the container ships with ck as default and
 flash is only loaded if `--use-flash-attention` is in `COMFYUI_ARGS`.
 
+## Contributing
+
+No commit may credit a model as a co-author. GitHub counts a
+`Co-Authored-By:` trailer as a contribution, so a trailer that names a
+model puts the model on this repository's contributors list — a model
+that wrote none of it, holds no key and opened no pull request.
+
+The check is `tools/check_no_model_coauthor_trailers.py`; it runs on
+every push and every pull request, and it checks itself: a detector that
+cannot see a trailer any more reports green, which is worse than no
+detector at all.
+
 ## Credits
 
 This work is a collaboration between:
