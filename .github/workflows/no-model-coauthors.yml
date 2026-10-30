@@ -1,0 +1,32 @@
+name: no model co-authors
+
+# A commit may not credit a model as a co-author. GitHub counts a
+# co-author trailer as a contribution, so a trailer that names a model
+# puts the model on the contributors list of a repository it never
+# contributed to. The check reads the history; the tripwire is here so
+# that the next trailer is red on the push that carries it, not on the
+# page a reader looks at later.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  trailers:
+    name: no commit credits a model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # the whole history: the trailer can live on any branch, and
+          # GitHub's contributor graph walks all of them
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: no commit may credit a model as a co-author
+        run: python3 tools/check_no_model_coauthor_trailers.py .

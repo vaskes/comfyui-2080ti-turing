@@ -50,5 +50,7 @@ models/
 output/
 input/
 user/
-workflows/
+# the runtime directory of ComfyUI, at the root of the checkout --
+# NOT .github/workflows/, which holds the CI of this repository
+/workflows/
 custom_nodes/
